@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentic-ops-assistant"
+version = "0.1.0"
+description = "Secure agentic RAG operations assistant."
+requires-python = ">=3.13,<3.15"
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
