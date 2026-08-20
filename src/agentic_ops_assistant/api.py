@@ -1,8 +1,20 @@
 from collections.abc import Mapping, Sequence
+from uuid import UUID
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
+from agentic_ops_assistant.actions.models import (
+    PolicyDecision,
+    PolicyStatus,
+    ProposedAction,
+)
+from agentic_ops_assistant.approval.models import ApprovalRequest
+from agentic_ops_assistant.approval.store import ApprovalStore, InMemoryApprovalStore
+from agentic_ops_assistant.approval.workflow import (
+    ApprovalNotFoundError,
+    ApprovalService,
+)
 from agentic_ops_assistant.investigation import InvestigationReport, investigate
 from agentic_ops_assistant.knowledge.loader import load_articles
 from agentic_ops_assistant.knowledge.models import KnowledgeArticle, KnowledgeMatch
@@ -27,6 +39,10 @@ class InvestigationRequest(BaseModel):
         return normalized_value
 
 
+class ApprovalDecisionRequest(BaseModel):
+    approved: bool
+
+
 class ServiceStatusResponse(BaseModel):
     service: str
     health: str
@@ -41,21 +57,44 @@ class KnowledgeMatchResponse(BaseModel):
     score: int
 
 
+class ProposedActionResponse(BaseModel):
+    service: str
+    action_type: str
+    rationale: str
+
+
+class PolicyDecisionResponse(BaseModel):
+    status: str
+    reason: str
+
+
+class ApprovalResponse(BaseModel):
+    id: UUID
+    action: ProposedActionResponse
+    status: str
+
+
 class InvestigationResponse(BaseModel):
     service: str
     service_status: ServiceStatusResponse | None
     knowledge_matches: list[KnowledgeMatchResponse]
+    proposed_action: ProposedActionResponse | None
+    policy_decision: PolicyDecisionResponse | None
+    approval_request: ApprovalResponse | None
 
 
 def create_app(
     *,
     articles: Sequence[KnowledgeArticle] = (),
     statuses: Sequence[ServiceStatus] = (),
+    approval_store: ApprovalStore | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agentic Ops Assistant",
         version="0.1.0",
     )
+    store = InMemoryApprovalStore() if approval_store is None else approval_store
+    approval_service = ApprovalService(store)
 
     @app.get("/health")
     def health_check() -> dict[str, str]:
@@ -70,17 +109,66 @@ def create_app(
             statuses=statuses,
             limit=request.limit,
         )
+        approval_request: ApprovalRequest | None = None
 
-        return _to_response(report)
+        if (
+            report.proposed_action is not None
+            and report.policy_decision is not None
+            and report.policy_decision.status is PolicyStatus.REQUIRES_APPROVAL
+        ):
+            approval_request = approval_service.create(
+                report.proposed_action,
+                report.policy_decision,
+            )
+
+        return _to_response(report, approval_request)
+
+    @app.post(
+        "/approvals/{approval_id}/decisions",
+        response_model=ApprovalResponse,
+    )
+    def decide_pending_approval(
+        approval_id: UUID,
+        request: ApprovalDecisionRequest,
+    ) -> ApprovalResponse:
+        try:
+            approval_request = approval_service.decide(
+                approval_id,
+                approved=request.approved,
+            )
+        except ApprovalNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+        return _to_approval_response(approval_request)
 
     return app
 
 
-def _to_response(report: InvestigationReport) -> InvestigationResponse:
+def create_app_from_environment(
+    environment: Mapping[str, str] | None = None,
+) -> FastAPI:
+    settings = load_settings(environment)
+    articles = load_articles(settings.knowledge_file)
+    statuses = load_service_statuses(settings.service_status_file)
+
+    return create_app(articles=articles, statuses=statuses)
+
+
+def _to_response(
+    report: InvestigationReport,
+    approval_request: ApprovalRequest | None,
+) -> InvestigationResponse:
     return InvestigationResponse(
         service=report.service,
         service_status=_to_status_response(report.service_status),
         knowledge_matches=[_to_match_response(match) for match in report.knowledge_matches],
+        proposed_action=_to_action_response(report.proposed_action),
+        policy_decision=_to_policy_response(report.policy_decision),
+        approval_request=(
+            _to_approval_response(approval_request) if approval_request is not None else None
+        ),
     )
 
 
@@ -105,11 +193,40 @@ def _to_match_response(match: KnowledgeMatch) -> KnowledgeMatchResponse:
     )
 
 
-def create_app_from_environment(
-    environment: Mapping[str, str] | None = None,
-) -> FastAPI:
-    settings = load_settings(environment)
-    articles = load_articles(settings.knowledge_file)
-    statuses = load_service_statuses(settings.service_status_file)
+def _to_action_response(
+    action: ProposedAction | None,
+) -> ProposedActionResponse | None:
+    if action is None:
+        return None
 
-    return create_app(articles=articles, statuses=statuses)
+    return ProposedActionResponse(
+        service=action.service,
+        action_type=action.action_type.value,
+        rationale=action.rationale,
+    )
+
+
+def _to_policy_response(
+    decision: PolicyDecision | None,
+) -> PolicyDecisionResponse | None:
+    if decision is None:
+        return None
+
+    return PolicyDecisionResponse(
+        status=decision.status.value,
+        reason=decision.reason,
+    )
+
+
+def _to_approval_response(
+    approval_request: ApprovalRequest,
+) -> ApprovalResponse:
+    return ApprovalResponse(
+        id=approval_request.id,
+        action=ProposedActionResponse(
+            service=approval_request.action.service,
+            action_type=approval_request.action.action_type.value,
+            rationale=approval_request.action.rationale,
+        ),
+        status=approval_request.status.value,
+    )

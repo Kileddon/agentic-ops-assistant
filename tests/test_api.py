@@ -56,6 +56,16 @@ def test_create_investigation_returns_structured_report() -> None:
                 "score": 6,
             },
         ],
+        "proposed_action": {
+            "service": "payments-api",
+            "action_type": "collect_diagnostics",
+            "rationale": "Service status is degraded: Elevated database timeout rate.",
+        },
+        "policy_decision": {
+            "status": "allowed",
+            "reason": "Read-only diagnostic collection is allowed.",
+        },
+        "approval_request": None,
     }
 
 
@@ -124,3 +134,37 @@ def test_create_app_from_environment_loads_application_data(
     assert response.status_code == 200
     assert response.json()["service_status"]["health"] == "degraded"
     assert response.json()["knowledge_matches"][0]["id"] == "database-timeout"
+
+
+def test_outage_creates_pending_approval_and_accepts_decision() -> None:
+    status = ServiceStatus(
+        service="payments-api",
+        health=ServiceHealth.OUTAGE,
+        summary="Service is not responding.",
+    )
+    client = TestClient(create_app(statuses=[status]))
+
+    investigation_response = client.post(
+        "/investigations",
+        json={
+            "service": "payments-api",
+            "query": "database timeout",
+        },
+    )
+
+    assert investigation_response.status_code == 200
+
+    report = investigation_response.json()
+    approval_request = report["approval_request"]
+
+    assert report["policy_decision"]["status"] == "requires_approval"
+    assert approval_request["status"] == "pending"
+    assert approval_request["action"]["action_type"] == "restart_service"
+
+    decision_response = client.post(
+        f"/approvals/{approval_request['id']}/decisions",
+        json={"approved": True},
+    )
+
+    assert decision_response.status_code == 200
+    assert decision_response.json()["status"] == "approved"
