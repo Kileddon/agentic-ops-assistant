@@ -1,28 +1,21 @@
 import argparse
+import sys
 from collections.abc import Sequence
+from pathlib import Path
 
-from agentic_ops_assistant.knowledge.models import KnowledgeArticle
+from agentic_ops_assistant.knowledge.loader import KnowledgeLoadError, load_articles
 from agentic_ops_assistant.knowledge.search import search_knowledge
-
-_DEMO_ARTICLES: tuple[KnowledgeArticle, ...] = (
-    KnowledgeArticle(
-        id="database-timeout",
-        title="Database timeout",
-        content="Check the connection pool and active database connections.",
-        tags=("database", "timeout"),
-    ),
-    KnowledgeArticle(
-        id="cache-eviction",
-        title="Cache eviction",
-        content="Review cache capacity and eviction rate.",
-        tags=("cache",),
-    ),
-)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Search the local operations knowledge base.",
+    )
+    parser.add_argument(
+        "--knowledge-file",
+        type=Path,
+        required=True,
+        help="Path to a JSON knowledge file.",
     )
     parser.add_argument(
         "query",
@@ -32,7 +25,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     query = " ".join(arguments.query)
 
-    matches = search_knowledge(query, _DEMO_ARTICLES)
+    try:
+        articles = load_articles(arguments.knowledge_file)
+    except KnowledgeLoadError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 2
+
+    matches = search_knowledge(query, articles)
 
     if not matches:
         print("No matching articles found.")

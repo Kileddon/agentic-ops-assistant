@@ -1,0 +1,62 @@
+import json
+from pathlib import Path
+
+from agentic_ops_assistant.knowledge.models import KnowledgeArticle
+
+
+class KnowledgeLoadError(ValueError):
+    """Raised when a knowledge file cannot be loaded or validated."""
+
+
+def load_articles(path: Path) -> tuple[KnowledgeArticle, ...]:
+    try:
+        payload: object = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise KnowledgeLoadError(f"Cannot read knowledge file: {path}") from error
+    except json.JSONDecodeError as error:
+        raise KnowledgeLoadError(f"Knowledge file is not valid JSON: {path}") from error
+
+    if not isinstance(payload, list):
+        raise KnowledgeLoadError("Knowledge file must contain a JSON array.")
+
+    return tuple(_parse_article(raw_article) for raw_article in payload)
+
+
+def _parse_article(raw_article: object) -> KnowledgeArticle:
+    if not isinstance(raw_article, dict):
+        raise KnowledgeLoadError("Each knowledge article must be a JSON object.")
+
+    article = {str(key): value for key, value in raw_article.items()}
+
+    return KnowledgeArticle(
+        id=_required_text(article, "id"),
+        title=_required_text(article, "title"),
+        content=_required_text(article, "content"),
+        tags=_parse_tags(article),
+    )
+
+
+def _required_text(article: dict[str, object], field_name: str) -> str:
+    value = article.get(field_name)
+
+    if not isinstance(value, str) or not value.strip():
+        raise KnowledgeLoadError(f"Article field '{field_name}' must be non-empty text.")
+
+    return value
+
+
+def _parse_tags(article: dict[str, object]) -> tuple[str, ...]:
+    raw_tags = article.get("tags", [])
+
+    if not isinstance(raw_tags, list):
+        raise KnowledgeLoadError("Article field 'tags' must be an array.")
+
+    tags: list[str] = []
+
+    for tag in raw_tags:
+        if not isinstance(tag, str) or not tag.strip():
+            raise KnowledgeLoadError("Every tag must be non-empty text.")
+
+        tags.append(tag)
+
+    return tuple(tags)

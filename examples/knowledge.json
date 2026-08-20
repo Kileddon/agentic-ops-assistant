@@ -1,0 +1,14 @@
+[
+  {
+    "id": "database-timeout",
+    "title": "Database timeout",
+    "content": "Check the connection pool and active database connections.",
+    "tags": ["database", "timeout"]
+  },
+  {
+    "id": "cache-eviction",
+    "title": "Cache eviction",
+    "content": "Review cache capacity and eviction rate.",
+    "tags": ["cache"]
+  }
+]
