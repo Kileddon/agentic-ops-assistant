@@ -19,7 +19,10 @@ def load_articles(path: Path) -> tuple[KnowledgeArticle, ...]:
     if not isinstance(payload, list):
         raise KnowledgeLoadError("Knowledge file must contain a JSON array.")
 
-    return tuple(_parse_article(raw_article) for raw_article in payload)
+    articles = tuple(_parse_article(raw_article) for raw_article in payload)
+    _validate_unique_article_ids(articles)
+
+    return articles
 
 
 def _parse_article(raw_article: object) -> KnowledgeArticle:
@@ -60,3 +63,17 @@ def _parse_tags(article: dict[str, object]) -> tuple[str, ...]:
         tags.append(tag)
 
     return tuple(tags)
+
+
+def _validate_unique_article_ids(
+    articles: tuple[KnowledgeArticle, ...],
+) -> None:
+    seen_ids: set[str] = set()
+
+    for article in articles:
+        if article.id in seen_ids:
+            raise KnowledgeLoadError(
+                f"Knowledge file contains duplicate article id: {article.id}",
+            )
+
+        seen_ids.add(article.id)

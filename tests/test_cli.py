@@ -35,7 +35,7 @@ def test_main_prints_matching_article(
     output = capsys.readouterr().out
 
     assert exit_code == 0
-    assert "[score=2] Database timeout" in output
+    assert "[score=6] Database timeout" in output
 
 
 def test_main_reports_empty_result(

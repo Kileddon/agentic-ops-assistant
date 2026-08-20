@@ -11,6 +11,8 @@ dependencies = []
 
 [project.scripts]
 ops-search = "agentic_ops_assistant.cli:main"
+ops-status = "agentic_ops_assistant.status_cli:main"
+ops-investigate = "agentic_ops_assistant.investigation_cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,12 @@
+[
+  {
+    "service": "payments-api",
+    "status": "degraded",
+    "summary": "Elevated database timeout rate."
+  },
+  {
+    "service": "catalog-api",
+    "status": "healthy",
+    "summary": "Operating within normal latency and error-rate limits."
+  }
+]

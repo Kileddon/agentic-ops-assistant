@@ -40,3 +40,27 @@ def test_load_articles_rejects_invalid_json(tmp_path: Path) -> None:
 
     with pytest.raises(KnowledgeLoadError, match="not valid JSON"):
         load_articles(knowledge_file)
+
+
+def test_load_articles_rejects_duplicate_ids(tmp_path: Path) -> None:
+    knowledge_file = tmp_path / "knowledge.json"
+    knowledge_file.write_text(
+        """
+        [
+          {
+            "id": "database-timeout",
+            "title": "Database timeout",
+            "content": "Check the connection pool."
+          },
+          {
+            "id": "database-timeout",
+            "title": "Database connections",
+            "content": "Review active connections."
+          }
+        ]
+        """,
+        encoding="utf-8",
+    )
+
+    with pytest.raises(KnowledgeLoadError, match="duplicate article id"):
+        load_articles(knowledge_file)
