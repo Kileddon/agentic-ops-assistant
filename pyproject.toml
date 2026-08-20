@@ -7,7 +7,9 @@ name = "agentic-ops-assistant"
 version = "0.1.0"
 description = "Secure agentic RAG operations assistant."
 requires-python = ">=3.13,<3.15"
-dependencies = []
+dependencies = [
+    "fastapi[standard]>=0.141.1",
+]
 
 [project.scripts]
 ops-search = "agentic_ops_assistant.cli:main"
