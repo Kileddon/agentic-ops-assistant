@@ -12,6 +12,7 @@ class SettingsError(ValueError):
 class Settings:
     knowledge_file: Path
     service_status_file: Path
+    ollama_model: str
 
 
 def load_settings(
@@ -24,6 +25,11 @@ def load_settings(
         service_status_file=_required_file_path(
             source,
             "OPS_SERVICE_STATUS_FILE",
+        ),
+        ollama_model=_optional_text(
+            source,
+            "OPS_OLLAMA_MODEL",
+            default="qwen2.5:3b",
         ),
     )
 
@@ -45,3 +51,22 @@ def _required_file_path(
         )
 
     return path
+
+
+def _optional_text(
+    environment: Mapping[str, str],
+    variable_name: str,
+    *,
+    default: str,
+) -> str:
+    raw_value = environment.get(variable_name)
+
+    if raw_value is None:
+        return default
+
+    normalized_value = raw_value.strip()
+
+    if not normalized_value:
+        raise SettingsError(f"Environment variable {variable_name} must not be blank")
+
+    return normalized_value

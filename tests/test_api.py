@@ -7,6 +7,15 @@ from agentic_ops_assistant.knowledge.models import KnowledgeArticle
 from agentic_ops_assistant.operations.status import ServiceHealth, ServiceStatus
 
 
+class FakeSummaryClient:
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    def summarize(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return "Payments API is degraded because of database timeouts."
+
+
 def test_health_check_returns_ok() -> None:
     client = TestClient(create_app())
 
@@ -168,3 +177,41 @@ def test_outage_creates_pending_approval_and_accepts_decision() -> None:
 
     assert decision_response.status_code == 200
     assert decision_response.json()["status"] == "approved"
+
+
+def test_create_investigation_summary_returns_local_model_response() -> None:
+    article = KnowledgeArticle(
+        id="database-timeout",
+        title="Database timeout",
+        content="Check the connection pool.",
+        tags=("database", "timeout"),
+    )
+    status = ServiceStatus(
+        service="payments-api",
+        health=ServiceHealth.DEGRADED,
+        summary="Elevated database timeout rate.",
+    )
+    summary_client = FakeSummaryClient()
+    client = TestClient(
+        create_app(
+            articles=[article],
+            statuses=[status],
+            summary_client=summary_client,
+        ),
+    )
+
+    response = client.post(
+        "/investigation-summaries",
+        json={
+            "service": "payments-api",
+            "query": "database timeout",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "service": "payments-api",
+        "summary": "Payments API is degraded because of database timeouts.",
+    }
+    assert len(summary_client.prompts) == 1
+    assert "Database timeout" in summary_client.prompts[0]

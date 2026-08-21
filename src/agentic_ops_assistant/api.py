@@ -21,6 +21,14 @@ from agentic_ops_assistant.knowledge.models import KnowledgeArticle, KnowledgeMa
 from agentic_ops_assistant.operations.status import ServiceStatus
 from agentic_ops_assistant.operations.status_loader import load_service_statuses
 from agentic_ops_assistant.settings import load_settings
+from agentic_ops_assistant.summarization.client import (
+    OllamaSummaryClient,
+    SummaryGenerationError,
+)
+from agentic_ops_assistant.summarization.service import (
+    InvestigationSummaryService,
+    SummaryClient,
+)
 
 
 class InvestigationRequest(BaseModel):
@@ -83,11 +91,17 @@ class InvestigationResponse(BaseModel):
     approval_request: ApprovalResponse | None
 
 
+class InvestigationSummaryResponse(BaseModel):
+    service: str
+    summary: str
+
+
 def create_app(
     *,
     articles: Sequence[KnowledgeArticle] = (),
     statuses: Sequence[ServiceStatus] = (),
     approval_store: ApprovalStore | None = None,
+    summary_client: SummaryClient | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agentic Ops Assistant",
@@ -124,6 +138,37 @@ def create_app(
         return _to_response(report, approval_request)
 
     @app.post(
+        "/investigation-summaries",
+        response_model=InvestigationSummaryResponse,
+    )
+    def create_investigation_summary(
+        request: InvestigationRequest,
+    ) -> InvestigationSummaryResponse:
+        if summary_client is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Local summary service is not configured.",
+            )
+
+        report = investigate(
+            query=request.query,
+            service=request.service,
+            articles=articles,
+            statuses=statuses,
+            limit=request.limit,
+        )
+
+        try:
+            summary = InvestigationSummaryService(summary_client).summarize(report)
+        except SummaryGenerationError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+        return InvestigationSummaryResponse(
+            service=report.service,
+            summary=summary,
+        )
+
+    @app.post(
         "/approvals/{approval_id}/decisions",
         response_model=ApprovalResponse,
     )
@@ -153,7 +198,11 @@ def create_app_from_environment(
     articles = load_articles(settings.knowledge_file)
     statuses = load_service_statuses(settings.service_status_file)
 
-    return create_app(articles=articles, statuses=statuses)
+    return create_app(
+        articles=articles,
+        statuses=statuses,
+        summary_client=OllamaSummaryClient(model=settings.ollama_model),
+    )
 
 
 def _to_response(
