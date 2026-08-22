@@ -13,3 +13,9 @@ class KnowledgeArticle:
 class KnowledgeMatch:
     article: KnowledgeArticle
     score: int
+
+
+@dataclass(frozen=True, slots=True)
+class SemanticKnowledgeMatch:
+    article: KnowledgeArticle
+    similarity: float
