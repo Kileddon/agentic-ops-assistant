@@ -5,7 +5,11 @@ from agentic_ops_assistant.actions.models import (
     ProposedAction,
 )
 from agentic_ops_assistant.investigation import InvestigationReport
-from agentic_ops_assistant.knowledge.models import KnowledgeArticle, KnowledgeMatch
+from agentic_ops_assistant.knowledge.models import (
+    KnowledgeArticle,
+    KnowledgeMatch,
+    SemanticKnowledgeMatch,
+)
 from agentic_ops_assistant.operations.status import ServiceHealth, ServiceStatus
 from agentic_ops_assistant.summarization.prompt import build_summary_prompt
 
@@ -38,6 +42,16 @@ def test_build_summary_prompt_includes_investigation_data() -> None:
             status=PolicyStatus.ALLOWED,
             reason="Collecting diagnostics is read-only.",
         ),
+        semantic_matches=(
+            SemanticKnowledgeMatch(
+                article=KnowledgeArticle(
+                    id="connection-pool",
+                    title="Connection pool exhaustion",
+                    content="Inspect active database connections.",
+                ),
+                similarity=0.722,
+            ),
+        ),
     )
 
     prompt = build_summary_prompt(report)
@@ -47,3 +61,6 @@ def test_build_summary_prompt_includes_investigation_data() -> None:
     assert "Database timeout" in prompt
     assert "collect_diagnostics" in prompt
     assert "Do not propose new actions." in prompt
+    assert "Semantic knowledge matches:" in prompt
+    assert "Connection pool exhaustion" in prompt
+    assert "Similarity: 0.722" in prompt

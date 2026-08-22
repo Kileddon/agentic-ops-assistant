@@ -83,3 +83,36 @@ def test_investigate_requires_approval_for_outage_restart() -> None:
         status=PolicyStatus.REQUIRES_APPROVAL,
         reason="Service restart requires human approval.",
     )
+
+
+class FakeEmbedder:
+    def embed(self, text: str) -> tuple[float, ...]:
+        if text == "backend connections exhausted":
+            return (1.0, 0.0)
+
+        if "Database timeout" in text:
+            return (1.0, 0.0)
+
+        raise AssertionError(f"Unexpected text: {text}")
+
+
+def test_investigate_includes_semantic_matches_when_embedder_is_provided() -> None:
+    article = KnowledgeArticle(
+        id="database-timeout",
+        title="Database timeout",
+        content="Check the connection pool.",
+        tags=("database", "timeout"),
+    )
+
+    report = investigate(
+        query="backend connections exhausted",
+        service="payments-api",
+        articles=[article],
+        statuses=[],
+        semantic_embedder=FakeEmbedder(),
+    )
+
+    assert [match.article.id for match in report.semantic_matches] == [
+        "database-timeout",
+    ]
+    assert report.semantic_matches[0].similarity == 1.0

@@ -37,7 +37,18 @@ def build_summary_prompt(report: InvestigationReport) -> str:
                     f"  Content: {match.article.content}",
                 ],
             )
+    if report.semantic_matches:
+        sections.append("")
+        sections.append("Semantic knowledge matches:")
 
+        for semantic_match in report.semantic_matches:
+            sections.extend(
+                [
+                    f"- Title: {semantic_match.article.title}",
+                    f"  Similarity: {semantic_match.similarity:.3f}",
+                    f"  Content: {semantic_match.article.content}",
+                ],
+            )
     sections.append("")
     if report.proposed_action is None:
         sections.append("Proposed action: none")
