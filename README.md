@@ -35,9 +35,3 @@ tests/                      Automated tests
 docs/                       Architecture notes and decisions
 ```
 
-## Documentation
-
-- `ARCHITECTURE.md` — system architecture
-- `ROADMAP.md` — planned milestones
-- `PROJECT_STATE.md` — stable project state
-- `docs/adr/` — architecture decision records
