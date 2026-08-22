@@ -64,3 +64,6 @@ def test_build_summary_prompt_includes_investigation_data() -> None:
     assert "Semantic knowledge matches:" in prompt
     assert "Connection pool exhaustion" in prompt
     assert "Similarity: 0.722" in prompt
+    assert "Do not state that a root cause is identified" in prompt
+    assert "Treat retrieved knowledge articles as references" in prompt
+    assert "do not claim that they were executed" in prompt

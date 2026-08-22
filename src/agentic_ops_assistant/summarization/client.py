@@ -1,5 +1,8 @@
 import httpx2
 from openai import OpenAI, OpenAIError
+from pydantic import ValidationError
+
+from agentic_ops_assistant.summarization.models import GeneratedSummary
 
 
 class SummaryGenerationError(RuntimeError):
@@ -22,24 +25,37 @@ class OllamaSummaryClient:
             http_client=httpx2.Client(trust_env=False),
         )
 
-    def summarize(self, prompt: str) -> str:
+    def summarize(self, prompt: str) -> GeneratedSummary:
         if not prompt.strip():
             raise ValueError("Prompt must not be empty.")
 
         try:
-            response = self._client.responses.create(
+            response = self._client.chat.completions.create(
                 model=self._model,
-                input=prompt,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    },
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.0,
             )
         except OpenAIError as error:
             raise SummaryGenerationError(
                 "Local language model could not generate a summary.",
             ) from error
 
-        summary = response.output_text.strip()
-        if not summary:
+        content = response.choices[0].message.content
+
+        if content is None:
             raise SummaryGenerationError(
                 "Local language model returned an empty summary.",
             )
 
-        return summary
+        try:
+            return GeneratedSummary.model_validate_json(content)
+        except ValidationError as error:
+            raise SummaryGenerationError(
+                "Local language model returned an invalid summary.",
+            ) from error

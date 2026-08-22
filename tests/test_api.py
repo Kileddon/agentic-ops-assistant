@@ -5,15 +5,20 @@ from fastapi.testclient import TestClient
 from agentic_ops_assistant.api import create_app, create_app_from_environment
 from agentic_ops_assistant.knowledge.models import KnowledgeArticle
 from agentic_ops_assistant.operations.status import ServiceHealth, ServiceStatus
+from agentic_ops_assistant.summarization.models import GeneratedSummary
 
 
 class FakeSummaryClient:
     def __init__(self) -> None:
         self.prompts: list[str] = []
 
-    def summarize(self, prompt: str) -> str:
+    def summarize(self, prompt: str) -> GeneratedSummary:
         self.prompts.append(prompt)
-        return "Payments API is degraded because of database timeouts."
+        return GeneratedSummary(
+            summary="The payments API is degraded because of database timeouts.",
+            possible_cause=None,
+            uncertainty="The report does not confirm a root cause.",
+        )
 
 
 def test_health_check_returns_ok() -> None:
@@ -211,7 +216,11 @@ def test_create_investigation_summary_returns_local_model_response() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "service": "payments-api",
-        "summary": "Payments API is degraded because of database timeouts.",
+        "summary": (
+            "Summary: The payments API is degraded because of database timeouts.\n"
+            "Possible cause: Not established.\n"
+            "Uncertainty: The report does not confirm a root cause."
+        ),
     }
     assert len(summary_client.prompts) == 1
     assert "Database timeout" in summary_client.prompts[0]

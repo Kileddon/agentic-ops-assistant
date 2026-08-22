@@ -10,6 +10,14 @@ def build_summary_prompt(report: InvestigationReport) -> str:
         "Do not claim that an approval was granted unless the report says so.",
         "",
         "INVESTIGATION REPORT",
+        "Do not state that a root cause is identified unless the report explicitly confirms one.",
+        "Treat retrieved knowledge articles as references, not confirmation of a root cause.",
+        "Describe proposed actions as proposals and do not claim that they were executed.",
+        "State uncertainty when the report does not establish a conclusion.",
+        "Return only a valid JSON object without Markdown or code fences.",
+        'Use exactly these fields: "summary", "possible_cause", "uncertainty".',
+        '"possible_cause" must be null when the report does not establish a possible cause.',
+        '"uncertainty" must state what the report does not confirm.',
         f"Service: {report.service}",
     ]
 

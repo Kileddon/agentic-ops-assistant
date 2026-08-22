@@ -3,6 +3,11 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from agentic_ops_assistant.embeddings.client import (
+    EmbeddingGenerationError,
+    OllamaEmbeddingClient,
+    TextEmbedder,
+)
 from agentic_ops_assistant.investigation import investigate
 from agentic_ops_assistant.knowledge.loader import KnowledgeLoadError, load_articles
 from agentic_ops_assistant.operations.status_loader import (
@@ -22,6 +27,7 @@ from agentic_ops_assistant.summarization.service import (
 def main(
     argv: Sequence[str] | None = None,
     client: SummaryClient | None = None,
+    semantic_embedder: TextEmbedder | None = None,
 ) -> int:
     parser = argparse.ArgumentParser(
         description="Summarize an operational investigation with a local language model.",
@@ -50,6 +56,11 @@ def main(
         help="Maximum number of knowledge matches. Default: 5.",
     )
     parser.add_argument(
+        "--semantic-search",
+        action="store_true",
+        help="Include matches found by local semantic search.",
+    )
+    parser.add_argument(
         "service",
         help="Service to investigate.",
     )
@@ -68,13 +79,24 @@ def main(
         print(f"Error: {error}", file=sys.stderr)
         return 2
 
-    report = investigate(
-        query=query,
-        service=arguments.service,
-        articles=articles,
-        statuses=statuses,
-        limit=arguments.limit,
-    )
+    embedder = None
+    if arguments.semantic_search:
+        embedder = semantic_embedder or OllamaEmbeddingClient(
+            model="nomic-embed-text",
+        )
+
+    try:
+        report = investigate(
+            query=query,
+            service=arguments.service,
+            articles=articles,
+            statuses=statuses,
+            limit=arguments.limit,
+            semantic_embedder=embedder,
+        )
+    except EmbeddingGenerationError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 2
 
     summary_client = client
     if summary_client is None:
