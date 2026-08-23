@@ -52,6 +52,14 @@ Search by semantic similarity:
 uv run ops-semantic-search --knowledge-file examples/knowledge.json "connection pool exhausted"
 ```
 
+Evaluate semantic retrieval against expected articles:
+
+```bash
+uv run ops-evaluate-retrieval \
+  --knowledge-file examples/knowledge.json \
+  --evaluation-file examples/retrieval_evaluation.json
+```
+
 Create an investigation with semantic retrieval enabled:
 
 ```bash

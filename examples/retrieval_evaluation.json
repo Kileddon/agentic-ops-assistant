@@ -1,0 +1,22 @@
+[
+  {
+    "query": "connection pool exhausted",
+    "expected_article_id": "database-timeout"
+  },
+  {
+    "query": "database connections are saturated",
+    "expected_article_id": "database-timeout"
+  },
+  {
+    "query": "postgres queries are timing out",
+    "expected_article_id": "database-timeout"
+  },
+  {
+    "query": "cache keeps removing entries",
+    "expected_article_id": "cache-eviction"
+  },
+  {
+    "query": "cache memory capacity issue",
+    "expected_article_id": "cache-eviction"
+  }
+]
