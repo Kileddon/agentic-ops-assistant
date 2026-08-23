@@ -15,9 +15,17 @@ from agentic_ops_assistant.approval.workflow import (
     ApprovalNotFoundError,
     ApprovalService,
 )
+from agentic_ops_assistant.embeddings.client import (
+    OllamaEmbeddingClient,
+    TextEmbedder,
+)
 from agentic_ops_assistant.investigation import InvestigationReport, investigate
 from agentic_ops_assistant.knowledge.loader import load_articles
-from agentic_ops_assistant.knowledge.models import KnowledgeArticle, KnowledgeMatch
+from agentic_ops_assistant.knowledge.models import (
+    KnowledgeArticle,
+    KnowledgeMatch,
+    SemanticKnowledgeMatch,
+)
 from agentic_ops_assistant.operations.status import ServiceStatus
 from agentic_ops_assistant.operations.status_loader import load_service_statuses
 from agentic_ops_assistant.settings import load_settings
@@ -35,6 +43,7 @@ class InvestigationRequest(BaseModel):
     service: str = Field(min_length=1)
     query: str = Field(min_length=1)
     limit: int = Field(default=5, ge=1, le=10)
+    semantic_search: bool = False
 
     @field_validator("service", "query")
     @classmethod
@@ -65,6 +74,14 @@ class KnowledgeMatchResponse(BaseModel):
     score: int
 
 
+class SemanticKnowledgeMatchResponse(BaseModel):
+    id: str
+    title: str
+    content: str
+    tags: list[str]
+    similarity: float
+
+
 class ProposedActionResponse(BaseModel):
     service: str
     action_type: str
@@ -86,6 +103,7 @@ class InvestigationResponse(BaseModel):
     service: str
     service_status: ServiceStatusResponse | None
     knowledge_matches: list[KnowledgeMatchResponse]
+    semantic_matches: list[SemanticKnowledgeMatchResponse]
     proposed_action: ProposedActionResponse | None
     policy_decision: PolicyDecisionResponse | None
     approval_request: ApprovalResponse | None
@@ -102,6 +120,7 @@ def create_app(
     statuses: Sequence[ServiceStatus] = (),
     approval_store: ApprovalStore | None = None,
     summary_client: SummaryClient | None = None,
+    semantic_embedder: TextEmbedder | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agentic Ops Assistant",
@@ -109,6 +128,20 @@ def create_app(
     )
     store = InMemoryApprovalStore() if approval_store is None else approval_store
     approval_service = ApprovalService(store)
+
+    def get_semantic_embedder(
+        request: InvestigationRequest,
+    ) -> TextEmbedder | None:
+        if not request.semantic_search:
+            return None
+
+        if semantic_embedder is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Local semantic search is not configured.",
+            )
+
+        return semantic_embedder
 
     @app.get("/health")
     def health_check() -> dict[str, str]:
@@ -122,6 +155,7 @@ def create_app(
             articles=articles,
             statuses=statuses,
             limit=request.limit,
+            semantic_embedder=get_semantic_embedder(request),
         )
         approval_request: ApprovalRequest | None = None
 
@@ -156,6 +190,7 @@ def create_app(
             articles=articles,
             statuses=statuses,
             limit=request.limit,
+            semantic_embedder=get_semantic_embedder(request),
         )
 
         try:
@@ -202,6 +237,7 @@ def create_app_from_environment(
         articles=articles,
         statuses=statuses,
         summary_client=OllamaSummaryClient(model=settings.ollama_model),
+        semantic_embedder=OllamaEmbeddingClient(model="nomic-embed-text"),
     )
 
 
@@ -213,6 +249,7 @@ def _to_response(
         service=report.service,
         service_status=_to_status_response(report.service_status),
         knowledge_matches=[_to_match_response(match) for match in report.knowledge_matches],
+        semantic_matches=[_to_semantic_match_response(match) for match in report.semantic_matches],
         proposed_action=_to_action_response(report.proposed_action),
         policy_decision=_to_policy_response(report.policy_decision),
         approval_request=(
@@ -239,6 +276,18 @@ def _to_match_response(match: KnowledgeMatch) -> KnowledgeMatchResponse:
         content=match.article.content,
         tags=list(match.article.tags),
         score=match.score,
+    )
+
+
+def _to_semantic_match_response(
+    match: SemanticKnowledgeMatch,
+) -> SemanticKnowledgeMatchResponse:
+    return SemanticKnowledgeMatchResponse(
+        id=match.article.id,
+        title=match.article.title,
+        content=match.article.content,
+        tags=list(match.article.tags),
+        similarity=match.similarity,
     )
 
 

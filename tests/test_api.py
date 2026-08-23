@@ -21,6 +21,14 @@ class FakeSummaryClient:
         )
 
 
+class FakeEmbedder:
+    def embed(self, text: str) -> tuple[float, ...]:
+        if "connection pool" in text:
+            return (1.0, 0.0)
+
+        return (0.0, 1.0)
+
+
 def test_health_check_returns_ok() -> None:
     client = TestClient(create_app())
 
@@ -70,6 +78,7 @@ def test_create_investigation_returns_structured_report() -> None:
                 "score": 6,
             },
         ],
+        "semantic_matches": [],
         "proposed_action": {
             "service": "payments-api",
             "action_type": "collect_diagnostics",
@@ -80,6 +89,59 @@ def test_create_investigation_returns_structured_report() -> None:
             "reason": "Read-only diagnostic collection is allowed.",
         },
         "approval_request": None,
+    }
+
+
+def test_create_investigation_returns_semantic_matches_when_requested() -> None:
+    article = KnowledgeArticle(
+        id="database-timeout",
+        title="Database timeout",
+        content="Check the connection pool.",
+        tags=("database", "timeout"),
+    )
+    client = TestClient(
+        create_app(
+            articles=[article],
+            semantic_embedder=FakeEmbedder(),
+        ),
+    )
+
+    response = client.post(
+        "/investigations",
+        json={
+            "service": "payments-api",
+            "query": "connection pool exhausted",
+            "semantic_search": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["semantic_matches"] == [
+        {
+            "id": "database-timeout",
+            "title": "Database timeout",
+            "content": "Check the connection pool.",
+            "tags": ["database", "timeout"],
+            "similarity": 1.0,
+        },
+    ]
+
+
+def test_create_investigation_requires_configured_embedder() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/investigations",
+        json={
+            "service": "payments-api",
+            "query": "connection pool exhausted",
+            "semantic_search": True,
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "Local semantic search is not configured.",
     }
 
 
@@ -202,6 +264,7 @@ def test_create_investigation_summary_returns_local_model_response() -> None:
             articles=[article],
             statuses=[status],
             summary_client=summary_client,
+            semantic_embedder=FakeEmbedder(),
         ),
     )
 
@@ -209,7 +272,8 @@ def test_create_investigation_summary_returns_local_model_response() -> None:
         "/investigation-summaries",
         json={
             "service": "payments-api",
-            "query": "database timeout",
+            "query": "connection pool exhausted",
+            "semantic_search": True,
         },
     )
 
@@ -224,3 +288,4 @@ def test_create_investigation_summary_returns_local_model_response() -> None:
     }
     assert len(summary_client.prompts) == 1
     assert "Database timeout" in summary_client.prompts[0]
+    assert "Semantic knowledge matches:" in summary_client.prompts[0]
