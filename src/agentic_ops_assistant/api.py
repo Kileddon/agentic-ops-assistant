@@ -15,6 +15,7 @@ from agentic_ops_assistant.approval.workflow import (
     ApprovalNotFoundError,
     ApprovalService,
 )
+from agentic_ops_assistant.embeddings.cache import CachingTextEmbedder
 from agentic_ops_assistant.embeddings.client import (
     OllamaEmbeddingClient,
     TextEmbedder,
@@ -237,7 +238,9 @@ def create_app_from_environment(
         articles=articles,
         statuses=statuses,
         summary_client=OllamaSummaryClient(model=settings.ollama_model),
-        semantic_embedder=OllamaEmbeddingClient(model="nomic-embed-text"),
+        semantic_embedder=CachingTextEmbedder(
+            OllamaEmbeddingClient(model="nomic-embed-text"),
+        ),
     )
 
 
