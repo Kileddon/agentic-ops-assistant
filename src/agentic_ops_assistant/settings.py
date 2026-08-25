@@ -18,6 +18,7 @@ class Settings:
     ollama_model: str
     status_source: StatusSource
     prometheus_url: str | None
+    audit_log_file: Path
 
 
 def load_settings(
@@ -41,6 +42,11 @@ def load_settings(
         ),
         prometheus_url=(
             _required_text(source, "OPS_PROMETHEUS_URL") if status_source == "prometheus" else None
+        ),
+        audit_log_file=_optional_path(
+            source,
+            "OPS_AUDIT_LOG_FILE",
+            default=Path("var/audit-events.jsonl"),
         ),
     )
 
@@ -108,3 +114,20 @@ def _status_source(environment: Mapping[str, str]) -> StatusSource:
     raise SettingsError(
         "Environment variable OPS_STATUS_SOURCE must be 'json' or 'prometheus'",
     )
+
+
+def _optional_path(
+    environment: Mapping[str, str],
+    variable_name: str,
+    *,
+    default: Path,
+) -> Path:
+    raw_value = environment.get(variable_name)
+
+    if raw_value is None:
+        return default
+
+    if not raw_value.strip():
+        raise SettingsError(f"Environment variable {variable_name} must not be blank")
+
+    return Path(raw_value)

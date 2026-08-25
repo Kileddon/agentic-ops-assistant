@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from agentic_ops_assistant.api import create_app, create_app_from_environment
+from agentic_ops_assistant.audit.store import InMemoryAuditStore
 from agentic_ops_assistant.knowledge.models import KnowledgeArticle
 from agentic_ops_assistant.operations.prometheus import PrometheusStatusError
 from agentic_ops_assistant.operations.status import ServiceHealth, ServiceStatus
@@ -201,6 +202,67 @@ def test_create_investigation_returns_503_when_status_provider_fails() -> None:
     }
 
 
+def test_api_records_and_lists_investigation_and_approval_events() -> None:
+    status = ServiceStatus(
+        service="payments-api",
+        health=ServiceHealth.OUTAGE,
+        summary="Service is not responding.",
+    )
+    audit_store = InMemoryAuditStore()
+    client = TestClient(create_app(statuses=[status], audit_store=audit_store))
+
+    investigation_response = client.post(
+        "/investigations",
+        json={
+            "service": "payments-api",
+            "query": "database timeout",
+        },
+    )
+    approval_id = investigation_response.json()["approval_request"]["id"]
+    decision_response = client.post(
+        f"/approvals/{approval_id}/decisions",
+        json={"approved": True},
+    )
+    events_response = client.get("/audit-events")
+
+    assert investigation_response.status_code == 200
+    assert decision_response.status_code == 200
+    assert events_response.status_code == 200
+    assert [event["event_type"] for event in events_response.json()] == [
+        "approval_decided",
+        "investigation_created",
+        "approval_created",
+    ]
+    assert events_response.json()[1]["details"] == {
+        "keyword_match_count": "0",
+        "semantic_match_count": "0",
+        "policy_status": "requires_approval",
+    }
+
+
+def test_api_records_status_provider_failure() -> None:
+    audit_store = InMemoryAuditStore()
+    client = TestClient(
+        create_app(
+            status_provider=FailingStatusProvider(),
+            audit_store=audit_store,
+        ),
+    )
+
+    investigation_response = client.post(
+        "/investigations",
+        json={
+            "service": "payments-api",
+            "query": "database timeout",
+        },
+    )
+    events_response = client.get("/audit-events")
+
+    assert investigation_response.status_code == 503
+    assert events_response.json()[0]["event_type"] == "status_provider_failed"
+    assert events_response.json()[0]["details"] == {"provider": "prometheus"}
+
+
 def test_create_investigation_rejects_blank_query() -> None:
     client = TestClient(create_app())
 
@@ -251,6 +313,7 @@ def test_create_app_from_environment_loads_application_data(
             {
                 "OPS_KNOWLEDGE_FILE": str(knowledge_file),
                 "OPS_SERVICE_STATUS_FILE": str(status_file),
+                "OPS_AUDIT_LOG_FILE": str(tmp_path / "audit-events.jsonl"),
             },
         ),
     )

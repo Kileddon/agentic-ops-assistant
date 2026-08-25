@@ -19,6 +19,8 @@ The language model is limited to summarization. It has no tools, production cred
 
 Action proposals and policy decisions are deterministic Python code. Approval records model a human decision, but there is intentionally no executor that can alter an external system.
 
+The HTTP application writes an append-only local audit trail for investigations, approval events, and status-provider failures. It records operational metadata, not raw queries or LLM prompts.
+
 ## Requirements
 
 - Python 3.13 or 3.14
@@ -99,11 +101,14 @@ Set the local data sources and start the application:
 ```powershell
 $env:OPS_KNOWLEDGE_FILE = "examples/knowledge.json"
 $env:OPS_SERVICE_STATUS_FILE = "examples/service_statuses.json"
+$env:OPS_AUDIT_LOG_FILE = "var/audit-events.jsonl"
 
 uv run uvicorn "agentic_ops_assistant.api:create_app_from_environment" --factory --reload
 ```
 
 JSON is the default status source. To use Prometheus instead, set `OPS_STATUS_SOURCE=prometheus` and `OPS_PROMETHEUS_URL` before starting the application; `OPS_SERVICE_STATUS_FILE` is then not required.
+
+`OPS_AUDIT_LOG_FILE` is optional and defaults to `var/audit-events.jsonl`. The `var/` directory is excluded from Git.
 
 The API is then available at `http://127.0.0.1:8000`.
 
@@ -111,6 +116,7 @@ The API is then available at `http://127.0.0.1:8000`.
 - `POST /investigations`
 - `POST /investigation-summaries`
 - `POST /approvals/{approval_id}/decisions`
+- `GET /audit-events`
 
 Example investigation request:
 

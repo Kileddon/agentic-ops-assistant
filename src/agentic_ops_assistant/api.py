@@ -1,7 +1,7 @@
 from collections.abc import Mapping, Sequence
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
 from agentic_ops_assistant.actions.models import (
@@ -14,6 +14,14 @@ from agentic_ops_assistant.approval.store import ApprovalStore, InMemoryApproval
 from agentic_ops_assistant.approval.workflow import (
     ApprovalNotFoundError,
     ApprovalService,
+)
+from agentic_ops_assistant.audit.models import AuditEvent, AuditEventType
+from agentic_ops_assistant.audit.service import AuditService
+from agentic_ops_assistant.audit.store import (
+    AuditStore,
+    AuditStoreError,
+    InMemoryAuditStore,
+    JsonlAuditStore,
 )
 from agentic_ops_assistant.embeddings.cache import CachingTextEmbedder
 from agentic_ops_assistant.embeddings.client import (
@@ -120,6 +128,14 @@ class InvestigationSummaryResponse(BaseModel):
     summary: str
 
 
+class AuditEventResponse(BaseModel):
+    id: UUID
+    occurred_at: str
+    event_type: str
+    service: str
+    details: dict[str, str]
+
+
 def create_app(
     *,
     articles: Sequence[KnowledgeArticle] = (),
@@ -128,6 +144,7 @@ def create_app(
     summary_client: SummaryClient | None = None,
     semantic_embedder: TextEmbedder | None = None,
     status_provider: ServiceStatusProvider | None = None,
+    audit_store: AuditStore | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agentic Ops Assistant",
@@ -135,6 +152,8 @@ def create_app(
     )
     store = InMemoryApprovalStore() if approval_store is None else approval_store
     approval_service = ApprovalService(store)
+    event_store = InMemoryAuditStore() if audit_store is None else audit_store
+    audit_service = AuditService(event_store)
 
     def get_semantic_embedder(
         request: InvestigationRequest,
@@ -162,7 +181,25 @@ def create_app(
                 status_provider=status_provider,
             )
         except PrometheusStatusError as error:
+            record_event(
+                AuditEventType.STATUS_PROVIDER_FAILED,
+                request.service,
+                {"provider": "prometheus"},
+            )
             raise HTTPException(status_code=503, detail=str(error)) from error
+
+    def record_event(
+        event_type: AuditEventType,
+        service: str,
+        details: Mapping[str, str],
+    ) -> AuditEvent:
+        try:
+            return audit_service.record(event_type, service, details)
+        except AuditStoreError as error:
+            raise HTTPException(
+                status_code=503,
+                detail="Audit storage is unavailable.",
+            ) from error
 
     @app.get("/health")
     def health_check() -> dict[str, str]:
@@ -182,6 +219,28 @@ def create_app(
                 report.proposed_action,
                 report.policy_decision,
             )
+            record_event(
+                AuditEventType.APPROVAL_CREATED,
+                report.service,
+                {
+                    "action_type": report.proposed_action.action_type.value,
+                    "approval_id": str(approval_request.id),
+                },
+            )
+
+        record_event(
+            AuditEventType.INVESTIGATION_CREATED,
+            report.service,
+            {
+                "keyword_match_count": str(len(report.knowledge_matches)),
+                "semantic_match_count": str(len(report.semantic_matches)),
+                "policy_status": (
+                    report.policy_decision.status.value
+                    if report.policy_decision is not None
+                    else "none"
+                ),
+            },
+        )
 
         return _to_response(report, approval_request)
 
@@ -199,6 +258,20 @@ def create_app(
             )
 
         report = build_report(request)
+
+        record_event(
+            AuditEventType.INVESTIGATION_CREATED,
+            report.service,
+            {
+                "keyword_match_count": str(len(report.knowledge_matches)),
+                "semantic_match_count": str(len(report.semantic_matches)),
+                "policy_status": (
+                    report.policy_decision.status.value
+                    if report.policy_decision is not None
+                    else "none"
+                ),
+            },
+        )
 
         try:
             summary = InvestigationSummaryService(summary_client).summarize(report)
@@ -228,7 +301,30 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
 
+        record_event(
+            AuditEventType.APPROVAL_DECIDED,
+            approval_request.action.service,
+            {
+                "approval_id": str(approval_request.id),
+                "status": approval_request.status.value,
+            },
+        )
+
         return _to_approval_response(approval_request)
+
+    @app.get("/audit-events", response_model=list[AuditEventResponse])
+    def list_audit_events(
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> list[AuditEventResponse]:
+        try:
+            events = audit_service.list_events(limit)
+        except AuditStoreError as error:
+            raise HTTPException(
+                status_code=503,
+                detail="Audit storage is unavailable.",
+            ) from error
+
+        return [_to_audit_event_response(event) for event in events]
 
     return app
 
@@ -261,6 +357,7 @@ def create_app_from_environment(
             OllamaEmbeddingClient(model="nomic-embed-text"),
         ),
         status_provider=status_provider,
+        audit_store=JsonlAuditStore(settings.audit_log_file),
     )
 
 
@@ -350,4 +447,14 @@ def _to_approval_response(
             rationale=approval_request.action.rationale,
         ),
         status=approval_request.status.value,
+    )
+
+
+def _to_audit_event_response(event: AuditEvent) -> AuditEventResponse:
+    return AuditEventResponse(
+        id=event.id,
+        occurred_at=event.occurred_at.isoformat(),
+        event_type=event.event_type.value,
+        service=event.service,
+        details=dict(event.details),
     )
