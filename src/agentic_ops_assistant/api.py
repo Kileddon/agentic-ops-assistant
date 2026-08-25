@@ -1,7 +1,8 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
 from agentic_ops_assistant.actions.models import (
@@ -23,6 +24,8 @@ from agentic_ops_assistant.audit.store import (
     InMemoryAuditStore,
     JsonlAuditStore,
 )
+from agentic_ops_assistant.auth.models import ApiRole, Principal
+from agentic_ops_assistant.auth.service import StaticApiKeyAuthenticator
 from agentic_ops_assistant.embeddings.cache import CachingTextEmbedder
 from agentic_ops_assistant.embeddings.client import (
     OllamaEmbeddingClient,
@@ -42,7 +45,7 @@ from agentic_ops_assistant.operations.prometheus import (
 from agentic_ops_assistant.operations.provider import ServiceStatusProvider
 from agentic_ops_assistant.operations.status import ServiceStatus
 from agentic_ops_assistant.operations.status_loader import load_service_statuses
-from agentic_ops_assistant.settings import load_settings
+from agentic_ops_assistant.settings import Settings, SettingsError, load_settings
 from agentic_ops_assistant.summarization.client import (
     OllamaSummaryClient,
     SummaryGenerationError,
@@ -145,6 +148,7 @@ def create_app(
     semantic_embedder: TextEmbedder | None = None,
     status_provider: ServiceStatusProvider | None = None,
     audit_store: AuditStore | None = None,
+    authenticator: StaticApiKeyAuthenticator | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agentic Ops Assistant",
@@ -154,6 +158,36 @@ def create_app(
     approval_service = ApprovalService(store)
     event_store = InMemoryAuditStore() if audit_store is None else audit_store
     audit_service = AuditService(event_store)
+
+    def require_role(*allowed_roles: ApiRole) -> Callable[..., Principal]:
+        def dependency(
+            api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+        ) -> Principal:
+            if authenticator is None:
+                return Principal(ApiRole.OPERATOR)
+
+            if api_key is None:
+                raise HTTPException(
+                    status_code=401,
+                    detail="API key is required.",
+                    headers={"WWW-Authenticate": "ApiKey"},
+                )
+
+            principal = authenticator.authenticate(api_key)
+
+            if principal is None:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Invalid API key.",
+                    headers={"WWW-Authenticate": "ApiKey"},
+                )
+
+            if principal.role not in allowed_roles:
+                raise HTTPException(status_code=403, detail="Insufficient API role.")
+
+            return principal
+
+        return dependency
 
     def get_semantic_embedder(
         request: InvestigationRequest,
@@ -169,7 +203,10 @@ def create_app(
 
         return semantic_embedder
 
-    def build_report(request: InvestigationRequest) -> InvestigationReport:
+    def build_report(
+        request: InvestigationRequest,
+        principal: Principal,
+    ) -> InvestigationReport:
         try:
             return investigate(
                 query=request.query,
@@ -184,7 +221,7 @@ def create_app(
             record_event(
                 AuditEventType.STATUS_PROVIDER_FAILED,
                 request.service,
-                {"provider": "prometheus"},
+                {"actor_role": principal.role.value, "provider": "prometheus"},
             )
             raise HTTPException(status_code=503, detail=str(error)) from error
 
@@ -206,8 +243,11 @@ def create_app(
         return {"status": "ok"}
 
     @app.post("/investigations", response_model=InvestigationResponse)
-    def create_investigation(request: InvestigationRequest) -> InvestigationResponse:
-        report = build_report(request)
+    def create_investigation(
+        request: InvestigationRequest,
+        principal: Annotated[Principal, Depends(require_role(ApiRole.OPERATOR))],
+    ) -> InvestigationResponse:
+        report = build_report(request, principal)
         approval_request: ApprovalRequest | None = None
 
         if (
@@ -224,6 +264,7 @@ def create_app(
                 report.service,
                 {
                     "action_type": report.proposed_action.action_type.value,
+                    "actor_role": principal.role.value,
                     "approval_id": str(approval_request.id),
                 },
             )
@@ -233,6 +274,7 @@ def create_app(
             report.service,
             {
                 "keyword_match_count": str(len(report.knowledge_matches)),
+                "actor_role": principal.role.value,
                 "semantic_match_count": str(len(report.semantic_matches)),
                 "policy_status": (
                     report.policy_decision.status.value
@@ -250,6 +292,7 @@ def create_app(
     )
     def create_investigation_summary(
         request: InvestigationRequest,
+        principal: Annotated[Principal, Depends(require_role(ApiRole.OPERATOR))],
     ) -> InvestigationSummaryResponse:
         if summary_client is None:
             raise HTTPException(
@@ -257,13 +300,14 @@ def create_app(
                 detail="Local summary service is not configured.",
             )
 
-        report = build_report(request)
+        report = build_report(request, principal)
 
         record_event(
             AuditEventType.INVESTIGATION_CREATED,
             report.service,
             {
                 "keyword_match_count": str(len(report.knowledge_matches)),
+                "actor_role": principal.role.value,
                 "semantic_match_count": str(len(report.semantic_matches)),
                 "policy_status": (
                     report.policy_decision.status.value
@@ -290,6 +334,7 @@ def create_app(
     def decide_pending_approval(
         approval_id: UUID,
         request: ApprovalDecisionRequest,
+        principal: Annotated[Principal, Depends(require_role(ApiRole.APPROVER))],
     ) -> ApprovalResponse:
         try:
             approval_request = approval_service.decide(
@@ -306,6 +351,7 @@ def create_app(
             approval_request.action.service,
             {
                 "approval_id": str(approval_request.id),
+                "actor_role": principal.role.value,
                 "status": approval_request.status.value,
             },
         )
@@ -314,6 +360,7 @@ def create_app(
 
     @app.get("/audit-events", response_model=list[AuditEventResponse])
     def list_audit_events(
+        principal: Annotated[Principal, Depends(require_role(ApiRole.AUDITOR))],
         limit: int = Query(default=100, ge=1, le=500),
     ) -> list[AuditEventResponse]:
         try:
@@ -358,6 +405,24 @@ def create_app_from_environment(
         ),
         status_provider=status_provider,
         audit_store=JsonlAuditStore(settings.audit_log_file),
+        authenticator=_authenticator_from_settings(settings),
+    )
+
+
+def _authenticator_from_settings(settings: Settings) -> StaticApiKeyAuthenticator:
+    if settings.operator_api_key is None:
+        raise SettingsError("Missing required environment variable: OPS_OPERATOR_API_KEY")
+
+    if settings.approver_api_key is None:
+        raise SettingsError("Missing required environment variable: OPS_APPROVER_API_KEY")
+
+    if settings.auditor_api_key is None:
+        raise SettingsError("Missing required environment variable: OPS_AUDITOR_API_KEY")
+
+    return StaticApiKeyAuthenticator(
+        operator_key=settings.operator_api_key,
+        approver_key=settings.approver_api_key,
+        auditor_key=settings.auditor_api_key,
     )
 
 

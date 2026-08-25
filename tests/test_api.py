@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from agentic_ops_assistant.api import create_app, create_app_from_environment
 from agentic_ops_assistant.audit.store import InMemoryAuditStore
+from agentic_ops_assistant.auth.service import StaticApiKeyAuthenticator
 from agentic_ops_assistant.knowledge.models import KnowledgeArticle
 from agentic_ops_assistant.operations.prometheus import PrometheusStatusError
 from agentic_ops_assistant.operations.status import ServiceHealth, ServiceStatus
@@ -234,6 +235,7 @@ def test_api_records_and_lists_investigation_and_approval_events() -> None:
         "approval_created",
     ]
     assert events_response.json()[1]["details"] == {
+        "actor_role": "operator",
         "keyword_match_count": "0",
         "semantic_match_count": "0",
         "policy_status": "requires_approval",
@@ -260,7 +262,10 @@ def test_api_records_status_provider_failure() -> None:
 
     assert investigation_response.status_code == 503
     assert events_response.json()[0]["event_type"] == "status_provider_failed"
-    assert events_response.json()[0]["details"] == {"provider": "prometheus"}
+    assert events_response.json()[0]["details"] == {
+        "actor_role": "operator",
+        "provider": "prometheus",
+    }
 
 
 def test_create_investigation_rejects_blank_query() -> None:
@@ -275,6 +280,61 @@ def test_create_investigation_rejects_blank_query() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_api_key_roles_protect_sensitive_endpoints() -> None:
+    status = ServiceStatus(
+        service="payments-api",
+        health=ServiceHealth.OUTAGE,
+        summary="Service is not responding.",
+    )
+    client = TestClient(
+        create_app(
+            statuses=[status],
+            authenticator=StaticApiKeyAuthenticator(
+                operator_key="operator-key",
+                approver_key="approver-key",
+                auditor_key="auditor-key",
+            ),
+        ),
+    )
+
+    missing_key_response = client.post(
+        "/investigations",
+        json={"service": "payments-api", "query": "database timeout"},
+    )
+    investigation_response = client.post(
+        "/investigations",
+        json={"service": "payments-api", "query": "database timeout"},
+        headers={"X-API-Key": "operator-key"},
+    )
+    approval_id = investigation_response.json()["approval_request"]["id"]
+    forbidden_decision_response = client.post(
+        f"/approvals/{approval_id}/decisions",
+        json={"approved": True},
+        headers={"X-API-Key": "operator-key"},
+    )
+    decision_response = client.post(
+        f"/approvals/{approval_id}/decisions",
+        json={"approved": True},
+        headers={"X-API-Key": "approver-key"},
+    )
+    forbidden_audit_response = client.get(
+        "/audit-events",
+        headers={"X-API-Key": "operator-key"},
+    )
+    audit_response = client.get(
+        "/audit-events",
+        headers={"X-API-Key": "auditor-key"},
+    )
+
+    assert client.get("/health").status_code == 200
+    assert missing_key_response.status_code == 401
+    assert investigation_response.status_code == 200
+    assert forbidden_decision_response.status_code == 403
+    assert decision_response.status_code == 200
+    assert forbidden_audit_response.status_code == 403
+    assert audit_response.status_code == 200
 
 
 def test_create_app_from_environment_loads_application_data(
@@ -314,6 +374,9 @@ def test_create_app_from_environment_loads_application_data(
                 "OPS_KNOWLEDGE_FILE": str(knowledge_file),
                 "OPS_SERVICE_STATUS_FILE": str(status_file),
                 "OPS_AUDIT_LOG_FILE": str(tmp_path / "audit-events.jsonl"),
+                "OPS_OPERATOR_API_KEY": "operator-key",
+                "OPS_APPROVER_API_KEY": "approver-key",
+                "OPS_AUDITOR_API_KEY": "auditor-key",
             },
         ),
     )
@@ -324,6 +387,7 @@ def test_create_app_from_environment_loads_application_data(
             "service": "payments-api",
             "query": "database timeout",
         },
+        headers={"X-API-Key": "operator-key"},
     )
 
     assert response.status_code == 200

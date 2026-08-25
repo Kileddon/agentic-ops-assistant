@@ -102,6 +102,9 @@ Set the local data sources and start the application:
 $env:OPS_KNOWLEDGE_FILE = "examples/knowledge.json"
 $env:OPS_SERVICE_STATUS_FILE = "examples/service_statuses.json"
 $env:OPS_AUDIT_LOG_FILE = "var/audit-events.jsonl"
+$env:OPS_OPERATOR_API_KEY = "replace-with-operator-secret"
+$env:OPS_APPROVER_API_KEY = "replace-with-approver-secret"
+$env:OPS_AUDITOR_API_KEY = "replace-with-auditor-secret"
 
 uv run uvicorn "agentic_ops_assistant.api:create_app_from_environment" --factory --reload
 ```
@@ -109,6 +112,8 @@ uv run uvicorn "agentic_ops_assistant.api:create_app_from_environment" --factory
 JSON is the default status source. To use Prometheus instead, set `OPS_STATUS_SOURCE=prometheus` and `OPS_PROMETHEUS_URL` before starting the application; `OPS_SERVICE_STATUS_FILE` is then not required.
 
 `OPS_AUDIT_LOG_FILE` is optional and defaults to `var/audit-events.jsonl`. The `var/` directory is excluded from Git.
+
+The three API keys are required and must be distinct. Send them through `X-API-Key`; never commit them or include them in an audit record.
 
 The API is then available at `http://127.0.0.1:8000`.
 
@@ -118,12 +123,15 @@ The API is then available at `http://127.0.0.1:8000`.
 - `POST /approvals/{approval_id}/decisions`
 - `GET /audit-events`
 
+`/health` is public. Investigations and summaries require the operator key, approval decisions require the approver key, and audit events require the auditor key.
+
 Example investigation request:
 
 ```powershell
 Invoke-RestMethod `
   -Method Post `
   -Uri "http://127.0.0.1:8000/investigations" `
+  -Headers @{ "X-API-Key" = $env:OPS_OPERATOR_API_KEY } `
   -ContentType "application/json" `
   -Body '{"service":"payments-api","query":"database timeout","limit":3}'
 ```

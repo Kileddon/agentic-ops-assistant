@@ -19,6 +19,9 @@ class Settings:
     status_source: StatusSource
     prometheus_url: str | None
     audit_log_file: Path
+    operator_api_key: str | None
+    approver_api_key: str | None
+    auditor_api_key: str | None
 
 
 def load_settings(
@@ -48,6 +51,9 @@ def load_settings(
             "OPS_AUDIT_LOG_FILE",
             default=Path("var/audit-events.jsonl"),
         ),
+        operator_api_key=_optional_secret(source, "OPS_OPERATOR_API_KEY"),
+        approver_api_key=_optional_secret(source, "OPS_APPROVER_API_KEY"),
+        auditor_api_key=_optional_secret(source, "OPS_AUDITOR_API_KEY"),
     )
 
 
@@ -131,3 +137,18 @@ def _optional_path(
         raise SettingsError(f"Environment variable {variable_name} must not be blank")
 
     return Path(raw_value)
+
+
+def _optional_secret(
+    environment: Mapping[str, str],
+    variable_name: str,
+) -> str | None:
+    raw_value = environment.get(variable_name)
+
+    if raw_value is None:
+        return None
+
+    if not raw_value.strip():
+        raise SettingsError(f"Environment variable {variable_name} must not be blank")
+
+    return raw_value
