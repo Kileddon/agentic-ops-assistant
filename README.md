@@ -80,6 +80,16 @@ uv run ops-summarize \
   payments-api "connection pool exhausted"
 ```
 
+Read a service availability status from Prometheus:
+
+```bash
+uv run ops-prometheus-status \
+  --prometheus-url http://localhost:9090 \
+  payments-api
+```
+
+The command queries `up{job="payments-api"}`. It assumes the Prometheus `job` label matches the service name.
+
 ## HTTP API
 
 Set the local data sources and start the application:
