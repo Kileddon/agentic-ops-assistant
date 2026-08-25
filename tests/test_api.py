@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from agentic_ops_assistant.api import create_app, create_app_from_environment
 from agentic_ops_assistant.knowledge.models import KnowledgeArticle
+from agentic_ops_assistant.operations.prometheus import PrometheusStatusError
 from agentic_ops_assistant.operations.status import ServiceHealth, ServiceStatus
 from agentic_ops_assistant.summarization.models import GeneratedSummary
 
@@ -27,6 +28,19 @@ class FakeEmbedder:
             return (1.0, 0.0)
 
         return (0.0, 1.0)
+
+
+class FakeStatusProvider:
+    def __init__(self, status: ServiceStatus | None) -> None:
+        self._status = status
+
+    def get_status(self, service: str) -> ServiceStatus | None:
+        return self._status
+
+
+class FailingStatusProvider:
+    def get_status(self, service: str) -> ServiceStatus | None:
+        raise PrometheusStatusError("Prometheus availability query failed.")
 
 
 def test_health_check_returns_ok() -> None:
@@ -142,6 +156,48 @@ def test_create_investigation_requires_configured_embedder() -> None:
     assert response.status_code == 503
     assert response.json() == {
         "detail": "Local semantic search is not configured.",
+    }
+
+
+def test_create_investigation_uses_injected_status_provider() -> None:
+    status = ServiceStatus(
+        service="payments-api",
+        health=ServiceHealth.OUTAGE,
+        summary="Prometheus reports all 1 targets down.",
+    )
+    client = TestClient(
+        create_app(
+            status_provider=FakeStatusProvider(status),
+        ),
+    )
+
+    response = client.post(
+        "/investigations",
+        json={
+            "service": "payments-api",
+            "query": "database timeout",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["service_status"]["health"] == "outage"
+    assert response.json()["proposed_action"]["action_type"] == "restart_service"
+
+
+def test_create_investigation_returns_503_when_status_provider_fails() -> None:
+    client = TestClient(create_app(status_provider=FailingStatusProvider()))
+
+    response = client.post(
+        "/investigations",
+        json={
+            "service": "payments-api",
+            "query": "database timeout",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "Prometheus availability query failed.",
     }
 
 

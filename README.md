@@ -90,6 +90,8 @@ uv run ops-prometheus-status \
 
 The command queries `up{job="payments-api"}`. It assumes the Prometheus `job` label matches the service name.
 
+`ops-investigate` and `ops-summarize` accept the same `--prometheus-url` option instead of `--status-file` when live status should be used.
+
 ## HTTP API
 
 Set the local data sources and start the application:
@@ -100,6 +102,8 @@ $env:OPS_SERVICE_STATUS_FILE = "examples/service_statuses.json"
 
 uv run uvicorn "agentic_ops_assistant.api:create_app_from_environment" --factory --reload
 ```
+
+JSON is the default status source. To use Prometheus instead, set `OPS_STATUS_SOURCE=prometheus` and `OPS_PROMETHEUS_URL` before starting the application; `OPS_SERVICE_STATUS_FILE` is then not required.
 
 The API is then available at `http://127.0.0.1:8000`.
 

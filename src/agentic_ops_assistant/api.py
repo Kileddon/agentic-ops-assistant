@@ -27,6 +27,11 @@ from agentic_ops_assistant.knowledge.models import (
     KnowledgeMatch,
     SemanticKnowledgeMatch,
 )
+from agentic_ops_assistant.operations.prometheus import (
+    PrometheusStatusError,
+    PrometheusStatusProvider,
+)
+from agentic_ops_assistant.operations.provider import ServiceStatusProvider
 from agentic_ops_assistant.operations.status import ServiceStatus
 from agentic_ops_assistant.operations.status_loader import load_service_statuses
 from agentic_ops_assistant.settings import load_settings
@@ -122,6 +127,7 @@ def create_app(
     approval_store: ApprovalStore | None = None,
     summary_client: SummaryClient | None = None,
     semantic_embedder: TextEmbedder | None = None,
+    status_provider: ServiceStatusProvider | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agentic Ops Assistant",
@@ -144,20 +150,27 @@ def create_app(
 
         return semantic_embedder
 
+    def build_report(request: InvestigationRequest) -> InvestigationReport:
+        try:
+            return investigate(
+                query=request.query,
+                service=request.service,
+                articles=articles,
+                statuses=statuses,
+                limit=request.limit,
+                semantic_embedder=get_semantic_embedder(request),
+                status_provider=status_provider,
+            )
+        except PrometheusStatusError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
     @app.get("/health")
     def health_check() -> dict[str, str]:
         return {"status": "ok"}
 
     @app.post("/investigations", response_model=InvestigationResponse)
     def create_investigation(request: InvestigationRequest) -> InvestigationResponse:
-        report = investigate(
-            query=request.query,
-            service=request.service,
-            articles=articles,
-            statuses=statuses,
-            limit=request.limit,
-            semantic_embedder=get_semantic_embedder(request),
-        )
+        report = build_report(request)
         approval_request: ApprovalRequest | None = None
 
         if (
@@ -185,14 +198,7 @@ def create_app(
                 detail="Local summary service is not configured.",
             )
 
-        report = investigate(
-            query=request.query,
-            service=request.service,
-            articles=articles,
-            statuses=statuses,
-            limit=request.limit,
-            semantic_embedder=get_semantic_embedder(request),
-        )
+        report = build_report(request)
 
         try:
             summary = InvestigationSummaryService(summary_client).summarize(report)
@@ -232,7 +238,20 @@ def create_app_from_environment(
 ) -> FastAPI:
     settings = load_settings(environment)
     articles = load_articles(settings.knowledge_file)
-    statuses = load_service_statuses(settings.service_status_file)
+
+    statuses: tuple[ServiceStatus, ...] = ()
+    status_provider: ServiceStatusProvider | None = None
+
+    if settings.status_source == "json":
+        if settings.service_status_file is None:
+            raise RuntimeError("JSON status source requires a status file.")
+
+        statuses = load_service_statuses(settings.service_status_file)
+    else:
+        if settings.prometheus_url is None:
+            raise RuntimeError("Prometheus status source requires a URL.")
+
+        status_provider = PrometheusStatusProvider(settings.prometheus_url)
 
     return create_app(
         articles=articles,
@@ -241,6 +260,7 @@ def create_app_from_environment(
         semantic_embedder=CachingTextEmbedder(
             OllamaEmbeddingClient(model="nomic-embed-text"),
         ),
+        status_provider=status_provider,
     )
 
 

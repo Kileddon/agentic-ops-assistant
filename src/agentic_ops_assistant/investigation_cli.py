@@ -10,6 +10,12 @@ from agentic_ops_assistant.embeddings.client import (
 )
 from agentic_ops_assistant.investigation import InvestigationReport, investigate
 from agentic_ops_assistant.knowledge.loader import KnowledgeLoadError, load_articles
+from agentic_ops_assistant.operations.prometheus import (
+    PrometheusStatusError,
+    PrometheusStatusProvider,
+)
+from agentic_ops_assistant.operations.provider import ServiceStatusProvider
+from agentic_ops_assistant.operations.status import ServiceStatus
 from agentic_ops_assistant.operations.status_loader import (
     ServiceStatusLoadError,
     load_service_statuses,
@@ -19,6 +25,7 @@ from agentic_ops_assistant.operations.status_loader import (
 def main(
     argv: Sequence[str] | None = None,
     semantic_embedder: TextEmbedder | None = None,
+    status_provider: ServiceStatusProvider | None = None,
 ) -> int:
     parser = argparse.ArgumentParser(
         description="Investigate an operational issue using local data sources.",
@@ -29,11 +36,15 @@ def main(
         required=True,
         help="Path to a JSON knowledge file.",
     )
-    parser.add_argument(
+    status_source = parser.add_mutually_exclusive_group(required=True)
+    status_source.add_argument(
         "--status-file",
         type=Path,
-        required=True,
         help="Path to a JSON service status file.",
+    )
+    status_source.add_argument(
+        "--prometheus-url",
+        help="Base URL of the Prometheus server.",
     )
     parser.add_argument(
         "--limit",
@@ -60,10 +71,31 @@ def main(
 
     try:
         articles = load_articles(arguments.knowledge_file)
-        statuses = load_service_statuses(arguments.status_file)
-    except (KnowledgeLoadError, ServiceStatusLoadError) as error:
+    except KnowledgeLoadError as error:
         print(f"Error: {error}", file=sys.stderr)
         return 2
+
+    statuses: tuple[ServiceStatus, ...] = ()
+    provider = status_provider
+
+    if arguments.status_file is not None:
+        try:
+            statuses = load_service_statuses(arguments.status_file)
+        except ServiceStatusLoadError as error:
+            print(f"Error: {error}", file=sys.stderr)
+            return 2
+    elif provider is None:
+        prometheus_url = arguments.prometheus_url
+
+        if prometheus_url is None:
+            print("Error: Prometheus URL is required.", file=sys.stderr)
+            return 2
+
+        try:
+            provider = PrometheusStatusProvider(prometheus_url)
+        except ValueError as error:
+            print(f"Error: {error}", file=sys.stderr)
+            return 2
 
     embedder = None
     if arguments.semantic_search:
@@ -79,8 +111,9 @@ def main(
             statuses=statuses,
             limit=arguments.limit,
             semantic_embedder=embedder,
+            status_provider=provider,
         )
-    except EmbeddingGenerationError as error:
+    except (EmbeddingGenerationError, PrometheusStatusError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 2
 

@@ -1,6 +1,5 @@
 import json
 from collections.abc import Sequence
-from typing import Protocol
 
 import httpx2
 
@@ -9,10 +8,6 @@ from agentic_ops_assistant.operations.status import ServiceHealth, ServiceStatus
 
 class PrometheusStatusError(RuntimeError):
     """Raised when Prometheus cannot provide a valid service status."""
-
-
-class ServiceStatusProvider(Protocol):
-    def get_status(self, service: str) -> ServiceStatus | None: ...
 
 
 class PrometheusStatusProvider:

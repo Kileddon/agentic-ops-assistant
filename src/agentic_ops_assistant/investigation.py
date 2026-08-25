@@ -12,6 +12,7 @@ from agentic_ops_assistant.knowledge.models import (
 )
 from agentic_ops_assistant.knowledge.search import search_knowledge
 from agentic_ops_assistant.knowledge.semantic_search import search_semantically
+from agentic_ops_assistant.operations.provider import ServiceStatusProvider
 from agentic_ops_assistant.operations.status import ServiceStatus, get_service_status
 
 
@@ -29,12 +30,17 @@ def investigate(
     query: str,
     service: str,
     articles: Sequence[KnowledgeArticle],
-    statuses: Sequence[ServiceStatus],
+    statuses: Sequence[ServiceStatus] = (),
     limit: int = 5,
     semantic_embedder: TextEmbedder | None = None,
     minimum_similarity: float = 0.6,
+    status_provider: ServiceStatusProvider | None = None,
 ) -> InvestigationReport:
-    service_status = get_service_status(service, statuses)
+    service_status = (
+        get_service_status(service, statuses)
+        if status_provider is None
+        else status_provider.get_status(service)
+    )
     knowledge_matches = tuple(search_knowledge(query, articles, limit=limit))
     semantic_matches: tuple[SemanticKnowledgeMatch, ...] = ()
 

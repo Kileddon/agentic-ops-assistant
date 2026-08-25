@@ -96,6 +96,14 @@ class FakeEmbedder:
         raise AssertionError(f"Unexpected text: {text}")
 
 
+class FakeStatusProvider:
+    def __init__(self, status: ServiceStatus | None) -> None:
+        self._status = status
+
+    def get_status(self, service: str) -> ServiceStatus | None:
+        return self._status
+
+
 def test_investigate_includes_semantic_matches_when_embedder_is_provided() -> None:
     article = KnowledgeArticle(
         id="database-timeout",
@@ -116,3 +124,22 @@ def test_investigate_includes_semantic_matches_when_embedder_is_provided() -> No
         "database-timeout",
     ]
     assert report.semantic_matches[0].similarity == 1.0
+
+
+def test_investigate_uses_injected_status_provider() -> None:
+    status = ServiceStatus(
+        service="payments-api",
+        health=ServiceHealth.OUTAGE,
+        summary="Prometheus reports all 1 targets down.",
+    )
+
+    report = investigate(
+        query="database",
+        service="payments-api",
+        articles=[],
+        status_provider=FakeStatusProvider(status),
+    )
+
+    assert report.service_status == status
+    assert report.proposed_action is not None
+    assert report.proposed_action.action_type is ActionType.RESTART_SERVICE

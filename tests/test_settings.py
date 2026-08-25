@@ -83,3 +83,52 @@ def test_load_settings_rejects_blank_ollama_model(tmp_path: Path) -> None:
                 "OPS_OLLAMA_MODEL": "   ",
             },
         )
+
+
+def test_load_settings_uses_prometheus_status_source(tmp_path: Path) -> None:
+    knowledge_file = tmp_path / "knowledge.json"
+    knowledge_file.touch()
+
+    settings = load_settings(
+        {
+            "OPS_KNOWLEDGE_FILE": str(knowledge_file),
+            "OPS_STATUS_SOURCE": "prometheus",
+            "OPS_PROMETHEUS_URL": "http://prometheus.example",
+        },
+    )
+
+    assert settings.status_source == "prometheus"
+    assert settings.service_status_file is None
+    assert settings.prometheus_url == "http://prometheus.example"
+
+
+def test_load_settings_rejects_prometheus_source_without_url(tmp_path: Path) -> None:
+    knowledge_file = tmp_path / "knowledge.json"
+    knowledge_file.touch()
+
+    with pytest.raises(
+        SettingsError,
+        match="Missing required environment variable: OPS_PROMETHEUS_URL",
+    ):
+        load_settings(
+            {
+                "OPS_KNOWLEDGE_FILE": str(knowledge_file),
+                "OPS_STATUS_SOURCE": "prometheus",
+            },
+        )
+
+
+def test_load_settings_rejects_unknown_status_source(tmp_path: Path) -> None:
+    knowledge_file = tmp_path / "knowledge.json"
+    knowledge_file.touch()
+
+    with pytest.raises(
+        SettingsError,
+        match="OPS_STATUS_SOURCE must be 'json' or 'prometheus'",
+    ):
+        load_settings(
+            {
+                "OPS_KNOWLEDGE_FILE": str(knowledge_file),
+                "OPS_STATUS_SOURCE": "unknown",
+            },
+        )

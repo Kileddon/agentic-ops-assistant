@@ -2,6 +2,9 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
+
+StatusSource = Literal["json", "prometheus"]
 
 
 class SettingsError(ValueError):
@@ -11,25 +14,33 @@ class SettingsError(ValueError):
 @dataclass(frozen=True, slots=True)
 class Settings:
     knowledge_file: Path
-    service_status_file: Path
+    service_status_file: Path | None
     ollama_model: str
+    status_source: StatusSource
+    prometheus_url: str | None
 
 
 def load_settings(
     environment: Mapping[str, str] | None = None,
 ) -> Settings:
     source = os.environ if environment is None else environment
+    status_source = _status_source(source)
 
     return Settings(
         knowledge_file=_required_file_path(source, "OPS_KNOWLEDGE_FILE"),
-        service_status_file=_required_file_path(
-            source,
-            "OPS_SERVICE_STATUS_FILE",
-        ),
         ollama_model=_optional_text(
             source,
             "OPS_OLLAMA_MODEL",
             default="qwen2.5:3b",
+        ),
+        status_source=status_source,
+        service_status_file=(
+            _required_file_path(source, "OPS_SERVICE_STATUS_FILE")
+            if status_source == "json"
+            else None
+        ),
+        prometheus_url=(
+            _required_text(source, "OPS_PROMETHEUS_URL") if status_source == "prometheus" else None
         ),
     )
 
@@ -70,3 +81,30 @@ def _optional_text(
         raise SettingsError(f"Environment variable {variable_name} must not be blank")
 
     return normalized_value
+
+
+def _required_text(
+    environment: Mapping[str, str],
+    variable_name: str,
+) -> str:
+    raw_value = environment.get(variable_name)
+
+    if raw_value is None or not raw_value.strip():
+        raise SettingsError(f"Missing required environment variable: {variable_name}")
+
+    return raw_value.strip()
+
+
+def _status_source(environment: Mapping[str, str]) -> StatusSource:
+    raw_value = environment.get("OPS_STATUS_SOURCE", "json")
+    normalized_value = raw_value.strip().casefold()
+
+    if normalized_value == "json":
+        return "json"
+
+    if normalized_value == "prometheus":
+        return "prometheus"
+
+    raise SettingsError(
+        "Environment variable OPS_STATUS_SOURCE must be 'json' or 'prometheus'",
+    )

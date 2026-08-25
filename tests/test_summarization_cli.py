@@ -2,6 +2,7 @@ from pathlib import Path
 
 from pytest import CaptureFixture
 
+from agentic_ops_assistant.operations.status import ServiceHealth, ServiceStatus
 from agentic_ops_assistant.summarization.models import GeneratedSummary
 from agentic_ops_assistant.summarization_cli import main
 
@@ -28,6 +29,15 @@ class FakeEmbedder:
             return (1.0, 0.0)
 
         raise AssertionError(f"Unexpected text: {text}")
+
+
+class FakeStatusProvider:
+    def get_status(self, service: str) -> ServiceStatus:
+        return ServiceStatus(
+            service=service,
+            health=ServiceHealth.DEGRADED,
+            summary="Prometheus reports 1 of 2 targets up.",
+        )
 
 
 def test_main_prints_summary_from_local_model_client(
@@ -148,3 +158,43 @@ def test_main_adds_semantic_matches_to_summary_prompt(
     )
     assert "Semantic knowledge matches:" in summary_client.prompts[0]
     assert "Database timeout" in summary_client.prompts[0]
+
+
+def test_main_uses_prometheus_status_provider(
+    tmp_path: Path,
+    capsys: CaptureFixture[str],
+) -> None:
+    knowledge_file = tmp_path / "knowledge.json"
+    knowledge_file.write_text(
+        """
+        [
+          {
+            "id": "database-timeout",
+            "title": "Database timeout",
+            "content": "Check the connection pool.",
+            "tags": ["database", "timeout"]
+          }
+        ]
+        """,
+        encoding="utf-8",
+    )
+    summary_client = FakeSummaryClient()
+
+    exit_code = main(
+        [
+            "--knowledge-file",
+            str(knowledge_file),
+            "--prometheus-url",
+            "http://prometheus.example",
+            "payments-api",
+            "database",
+        ],
+        client=summary_client,
+        status_provider=FakeStatusProvider(),
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Service summary: Prometheus reports 1 of 2 targets up." in summary_client.prompts[0]
+    assert captured.err == ""

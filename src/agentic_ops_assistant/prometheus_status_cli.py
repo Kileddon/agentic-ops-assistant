@@ -5,8 +5,8 @@ from collections.abc import Sequence
 from agentic_ops_assistant.operations.prometheus import (
     PrometheusStatusError,
     PrometheusStatusProvider,
-    ServiceStatusProvider,
 )
+from agentic_ops_assistant.operations.provider import ServiceStatusProvider
 
 
 def main(
