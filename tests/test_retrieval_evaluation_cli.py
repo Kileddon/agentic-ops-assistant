@@ -37,7 +37,7 @@ def test_main_prints_retrieval_evaluation_report(
         [
           {
             "query": "connection pool exhausted",
-            "expected_article_id": "database-timeout"
+            "expected_article_ids": ["database-timeout"]
           }
         ]
         """,
@@ -62,5 +62,7 @@ def test_main_prints_retrieval_evaluation_report(
     assert captured.out == (
         '[PASS] query="connection pool exhausted" expected=database-timeout '
         "rank=1 similarity=1.000\n"
-        "Hit rate: 1/1 (100.0%)\n"
+        "Recall@1: 1/1 (100.0%)\n"
+        "Recall@k: 1/1 (100.0%)\n"
+        "False-positive rate: 0/0 (0.0%)\n"
     )

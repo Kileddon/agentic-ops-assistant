@@ -18,7 +18,7 @@ class RetrievalEvaluationLoadError(ValueError):
 @dataclass(frozen=True, slots=True)
 class RetrievalEvaluationCase:
     query: str
-    expected_article_id: str
+    expected_article_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +29,9 @@ class RetrievalEvaluationResult:
 
     @property
     def passed(self) -> bool:
+        if not self.case.expected_article_ids:
+            return not self.matches
+
         return self.expected_rank is not None
 
 
@@ -45,11 +48,39 @@ class RetrievalEvaluationReport:
         return len(self.results)
 
     @property
-    def hit_rate(self) -> float:
-        if not self.results:
+    def positive_results(self) -> tuple[RetrievalEvaluationResult, ...]:
+        return tuple(result for result in self.results if result.case.expected_article_ids)
+
+    @property
+    def negative_results(self) -> tuple[RetrievalEvaluationResult, ...]:
+        return tuple(result for result in self.results if not result.case.expected_article_ids)
+
+    @property
+    def recall_at_1(self) -> float:
+        if not self.positive_results:
             return 0.0
 
-        return self.passed_cases / self.total_cases
+        return sum(result.expected_rank == 1 for result in self.positive_results) / len(
+            self.positive_results,
+        )
+
+    @property
+    def recall_at_limit(self) -> float:
+        if not self.positive_results:
+            return 0.0
+
+        return sum(result.passed for result in self.positive_results) / len(
+            self.positive_results,
+        )
+
+    @property
+    def false_positive_rate(self) -> float:
+        if not self.negative_results:
+            return 0.0
+
+        return sum(bool(result.matches) for result in self.negative_results) / len(
+            self.negative_results,
+        )
 
 
 def load_retrieval_evaluation_cases(
@@ -92,11 +123,12 @@ def evaluate_semantic_retrieval(
     article_ids = {article.id for article in articles}
 
     for case in cases:
-        if case.expected_article_id not in article_ids:
-            raise ValueError(
-                "Evaluation case references an unknown knowledge article: "
-                f"{case.expected_article_id}",
-            )
+        for expected_article_id in case.expected_article_ids:
+            if expected_article_id not in article_ids:
+                raise ValueError(
+                    "Evaluation case references an unknown knowledge article: "
+                    f"{expected_article_id}",
+                )
 
     results = tuple(
         _evaluate_case(
@@ -122,7 +154,7 @@ def _parse_case(raw_case: object) -> RetrievalEvaluationCase:
 
     return RetrievalEvaluationCase(
         query=_required_text(case, "query"),
-        expected_article_id=_required_text(case, "expected_article_id"),
+        expected_article_ids=_expected_article_ids(case),
     )
 
 
@@ -135,6 +167,32 @@ def _required_text(case: dict[str, object], field_name: str) -> str:
         )
 
     return value
+
+
+def _expected_article_ids(case: dict[str, object]) -> tuple[str, ...]:
+    value = case.get("expected_article_ids")
+
+    if not isinstance(value, list):
+        raise RetrievalEvaluationLoadError(
+            "Evaluation case field 'expected_article_ids' must be an array.",
+        )
+
+    article_ids: list[str] = []
+
+    for article_id in value:
+        if not isinstance(article_id, str) or not article_id.strip():
+            raise RetrievalEvaluationLoadError(
+                "Every expected article id must be non-empty text.",
+            )
+
+        article_ids.append(article_id)
+
+    if len(set(article_ids)) != len(article_ids):
+        raise RetrievalEvaluationLoadError(
+            "Evaluation case must not contain duplicate expected article ids.",
+        )
+
+    return tuple(article_ids)
 
 
 def _evaluate_case(
@@ -158,7 +216,7 @@ def _evaluate_case(
         (
             rank
             for rank, match in enumerate(matches, start=1)
-            if match.article.id == case.expected_article_id
+            if match.article.id in case.expected_article_ids
         ),
         None,
     )

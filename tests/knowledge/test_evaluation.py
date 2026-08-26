@@ -29,7 +29,7 @@ def test_load_retrieval_evaluation_cases_reads_valid_json_file(tmp_path: Path) -
         [
           {
             "query": "connection pool exhausted",
-            "expected_article_id": "database-timeout"
+            "expected_article_ids": ["database-timeout"]
           }
         ]
         """,
@@ -41,7 +41,7 @@ def test_load_retrieval_evaluation_cases_reads_valid_json_file(tmp_path: Path) -
     assert cases == (
         RetrievalEvaluationCase(
             query="connection pool exhausted",
-            expected_article_id="database-timeout",
+            expected_article_ids=("database-timeout",),
         ),
     )
 
@@ -73,11 +73,11 @@ def test_evaluate_semantic_retrieval_reports_hit_rate_and_rank() -> None:
     cases = (
         RetrievalEvaluationCase(
             query="connection pool exhausted",
-            expected_article_id="database-timeout",
+            expected_article_ids=("database-timeout",),
         ),
         RetrievalEvaluationCase(
             query="cache keeps removing entries",
-            expected_article_id="cache-eviction",
+            expected_article_ids=("cache-eviction",),
         ),
     )
 
@@ -90,8 +90,33 @@ def test_evaluate_semantic_retrieval_reports_hit_rate_and_rank() -> None:
 
     assert report.total_cases == 2
     assert report.passed_cases == 2
-    assert report.hit_rate == 1.0
+    assert report.recall_at_1 == 1.0
+    assert report.recall_at_limit == 1.0
+    assert report.false_positive_rate == 0.0
     assert [result.expected_rank for result in report.results] == [1, 1]
+
+
+def test_evaluate_semantic_retrieval_measures_negative_case_false_positive() -> None:
+    article = KnowledgeArticle(
+        id="database-timeout",
+        title="Database timeout",
+        content="Check the connection pool.",
+        tags=("database", "timeout"),
+    )
+    case = RetrievalEvaluationCase(
+        query="connection pool exhausted",
+        expected_article_ids=(),
+    )
+
+    report = evaluate_semantic_retrieval(
+        [case],
+        [article],
+        FakeEmbedder(),
+        minimum_similarity=0.5,
+    )
+
+    assert report.passed_cases == 0
+    assert report.false_positive_rate == 1.0
 
 
 def test_evaluate_semantic_retrieval_rejects_unknown_expected_article() -> None:
@@ -107,7 +132,7 @@ def test_evaluate_semantic_retrieval_rejects_unknown_expected_article() -> None:
             [
                 RetrievalEvaluationCase(
                     query="connection pool exhausted",
-                    expected_article_id="cache-eviction",
+                    expected_article_ids=("cache-eviction",),
                 ),
             ],
             [article],

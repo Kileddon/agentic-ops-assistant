@@ -21,6 +21,8 @@ Action proposals and policy decisions are deterministic Python code. Approval re
 
 The HTTP application writes an append-only local audit trail for investigations, approval events, and status-provider failures. It records operational metadata, not raw queries or LLM prompts.
 
+The environment-based HTTP application uses separate API keys for operator, approver, and auditor roles. It is intended for local use until it is deployed behind HTTPS and a managed identity boundary.
+
 ## Requirements
 
 - Python 3.13 or 3.14
@@ -61,6 +63,8 @@ uv run ops-evaluate-retrieval \
   --knowledge-file examples/knowledge.json \
   --evaluation-file examples/retrieval_evaluation.json
 ```
+
+The report shows `Recall@1`, `Recall@k`, and the false-positive rate. Evaluation cases can accept one or more relevant article IDs, or an empty list when no article should be returned.
 
 Create an investigation with semantic retrieval enabled:
 

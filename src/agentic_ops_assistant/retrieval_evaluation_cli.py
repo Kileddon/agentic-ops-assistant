@@ -90,18 +90,38 @@ def _print_report(report: RetrievalEvaluationReport) -> None:
             match = result.matches[expected_rank - 1]
             print(
                 f'[PASS] query="{result.case.query}" '
-                f"expected={result.case.expected_article_id} "
+                f"expected={','.join(result.case.expected_article_ids)} "
                 f"rank={expected_rank} "
                 f"similarity={match.similarity:.3f}",
             )
             continue
 
+        if not result.case.expected_article_ids and not result.matches:
+            print(f'[PASS] query="{result.case.query}" expected=no-match')
+            continue
+
+        if not result.case.expected_article_ids:
+            returned_ids = ",".join(match.article.id for match in result.matches)
+            print(f'[FALSE POSITIVE] query="{result.case.query}" returned={returned_ids}')
+            continue
+
         print(
-            f'[MISS] query="{result.case.query}" expected={result.case.expected_article_id}',
+            f'[MISS] query="{result.case.query}" '
+            f"expected={','.join(result.case.expected_article_ids)}",
         )
 
     print(
-        f"Hit rate: {report.passed_cases}/{report.total_cases} ({report.hit_rate:.1%})",
+        f"Recall@1: {sum(result.expected_rank == 1 for result in report.positive_results)}"
+        f"/{len(report.positive_results)} ({report.recall_at_1:.1%})",
+    )
+    print(
+        f"Recall@k: {sum(result.passed for result in report.positive_results)}"
+        f"/{len(report.positive_results)} ({report.recall_at_limit:.1%})",
+    )
+    print(
+        f"False-positive rate: "
+        f"{sum(bool(result.matches) for result in report.negative_results)}"
+        f"/{len(report.negative_results)} ({report.false_positive_rate:.1%})",
     )
 
 
