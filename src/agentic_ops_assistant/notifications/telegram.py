@@ -14,7 +14,7 @@ class TelegramNotifier:
 
         self._bot_token = bot_token
         self._chat_id = chat_id
-        self._client = httpx2.Client(trust_env=False) if client is None else client
+        self._client = httpx2.Client() if client is None else client
 
     def send(self, text: str) -> None:
         try:
