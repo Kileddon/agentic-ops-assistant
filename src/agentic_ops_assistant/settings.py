@@ -22,6 +22,9 @@ class Settings:
     operator_api_key: str | None
     approver_api_key: str | None
     auditor_api_key: str | None
+    operator_next_api_key: str | None
+    approver_next_api_key: str | None
+    auditor_next_api_key: str | None
 
 
 def load_settings(
@@ -54,6 +57,9 @@ def load_settings(
         operator_api_key=_optional_secret(source, "OPS_OPERATOR_API_KEY"),
         approver_api_key=_optional_secret(source, "OPS_APPROVER_API_KEY"),
         auditor_api_key=_optional_secret(source, "OPS_AUDITOR_API_KEY"),
+        operator_next_api_key=_optional_secret(source, "OPS_OPERATOR_NEXT_API_KEY"),
+        approver_next_api_key=_optional_secret(source, "OPS_APPROVER_NEXT_API_KEY"),
+        auditor_next_api_key=_optional_secret(source, "OPS_AUDITOR_NEXT_API_KEY"),
     )
 
 

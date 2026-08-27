@@ -293,6 +293,7 @@ def test_api_key_roles_protect_sensitive_endpoints() -> None:
             statuses=[status],
             authenticator=StaticApiKeyAuthenticator(
                 operator_key="operator-key",
+                operator_next_key="operator-next-key",
                 approver_key="approver-key",
                 auditor_key="auditor-key",
             ),
@@ -307,6 +308,11 @@ def test_api_key_roles_protect_sensitive_endpoints() -> None:
         "/investigations",
         json={"service": "payments-api", "query": "database timeout"},
         headers={"X-API-Key": "operator-key"},
+    )
+    rotated_key_response = client.post(
+        "/investigations",
+        json={"service": "payments-api", "query": "database timeout"},
+        headers={"X-API-Key": "operator-next-key"},
     )
     approval_id = investigation_response.json()["approval_request"]["id"]
     forbidden_decision_response = client.post(
@@ -331,6 +337,7 @@ def test_api_key_roles_protect_sensitive_endpoints() -> None:
     assert client.get("/health").status_code == 200
     assert missing_key_response.status_code == 401
     assert investigation_response.status_code == 200
+    assert rotated_key_response.status_code == 200
     assert forbidden_decision_response.status_code == 403
     assert decision_response.status_code == 200
     assert forbidden_audit_response.status_code == 403

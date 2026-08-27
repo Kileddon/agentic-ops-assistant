@@ -66,6 +66,25 @@ def test_load_settings_uses_default_ollama_model(tmp_path: Path) -> None:
     assert settings.ollama_model == "qwen2.5:3b"
 
 
+def test_load_settings_reads_optional_next_api_keys(tmp_path: Path) -> None:
+    knowledge_file = tmp_path / "knowledge.json"
+    knowledge_file.touch()
+    status_file = tmp_path / "service_statuses.json"
+    status_file.touch()
+
+    settings = load_settings(
+        {
+            "OPS_KNOWLEDGE_FILE": str(knowledge_file),
+            "OPS_SERVICE_STATUS_FILE": str(status_file),
+            "OPS_OPERATOR_NEXT_API_KEY": "operator-next",
+        },
+    )
+
+    assert settings.operator_next_api_key == "operator-next"
+    assert settings.approver_next_api_key is None
+    assert settings.auditor_next_api_key is None
+
+
 def test_load_settings_rejects_blank_ollama_model(tmp_path: Path) -> None:
     knowledge_file = tmp_path / "knowledge.json"
     knowledge_file.touch()

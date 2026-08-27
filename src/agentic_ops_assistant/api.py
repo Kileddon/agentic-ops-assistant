@@ -423,6 +423,9 @@ def _authenticator_from_settings(settings: Settings) -> StaticApiKeyAuthenticato
         operator_key=settings.operator_api_key,
         approver_key=settings.approver_api_key,
         auditor_key=settings.auditor_api_key,
+        operator_next_key=settings.operator_next_api_key,
+        approver_next_key=settings.approver_next_api_key,
+        auditor_next_key=settings.auditor_next_api_key,
     )
 
 

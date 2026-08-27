@@ -117,7 +117,9 @@ JSON is the default status source. To use Prometheus instead, set `OPS_STATUS_SO
 
 `OPS_AUDIT_LOG_FILE` is optional and defaults to `var/audit-events.jsonl`. The `var/` directory is excluded from Git.
 
-The three API keys are required and must be distinct. Send them through `X-API-Key`; never commit them or include them in an audit record.
+The three current API keys are required and must be distinct. Send them through `X-API-Key`; never commit them or include them in an audit record.
+
+For a no-downtime key replacement, temporarily set the optional matching variable, such as `OPS_OPERATOR_NEXT_API_KEY`. The API accepts both keys for that role. Replace the current variable with the new value, remove the `NEXT` variable, and restart the application. Rotation keys must also be distinct from every other role key.
 
 The API is then available at `http://127.0.0.1:8000`.
 
