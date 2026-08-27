@@ -2,7 +2,7 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from secrets import compare_digest
 from time import perf_counter
-from typing import Annotated, cast
+from typing import Annotated, Literal, cast
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
@@ -46,6 +46,11 @@ from agentic_ops_assistant.knowledge.models import (
     KnowledgeArticle,
     KnowledgeMatch,
     SemanticKnowledgeMatch,
+)
+from agentic_ops_assistant.notifications.telegram import (
+    NotificationSender,
+    TelegramNotificationError,
+    TelegramNotifier,
 )
 from agentic_ops_assistant.observability import (
     InMemoryApiMetrics,
@@ -163,6 +168,16 @@ class ApiMetricsResponse(BaseModel):
     total_duration_ms: float
 
 
+class PrometheusAlert(BaseModel):
+    status: Literal["firing", "resolved"]
+    labels: dict[str, str]
+    annotations: dict[str, str] = Field(default_factory=dict)
+
+
+class PrometheusAlertWebhook(BaseModel):
+    alerts: list[PrometheusAlert]
+
+
 def create_app(
     *,
     articles: Sequence[KnowledgeArticle] = (),
@@ -176,6 +191,8 @@ def create_app(
     rate_limiter: FixedWindowRateLimiter | RedisFixedWindowRateLimiter | None = None,
     metrics_store: InMemoryApiMetrics | RedisApiMetrics | None = None,
     prometheus_scrape_token: str | None = None,
+    alert_webhook_token: str | None = None,
+    alert_notifier: NotificationSender | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agentic Ops Assistant",
@@ -464,6 +481,31 @@ def create_app(
 
         return PlainTextResponse(render_prometheus_metrics(metrics.snapshot()))
 
+    @app.post("/alerts/prometheus")
+    def receive_prometheus_alert(
+        webhook: PrometheusAlertWebhook,
+        authorization: Annotated[str | None, Header()] = None,
+    ) -> dict[str, int]:
+        if alert_webhook_token is None or alert_notifier is None:
+            raise HTTPException(
+                status_code=503, detail="Prometheus alert notifications are not configured."
+            )
+
+        expected_header = f"Bearer {alert_webhook_token}"
+        if authorization is None or not compare_digest(authorization, expected_header):
+            raise HTTPException(status_code=401, detail="Invalid Prometheus alert credentials.")
+
+        firing_alerts = tuple(alert for alert in webhook.alerts if alert.status == "firing")
+        try:
+            for alert in firing_alerts:
+                alert_notifier.send(_format_prometheus_alert(alert))
+        except TelegramNotificationError as error:
+            raise HTTPException(
+                status_code=502, detail="Telegram alert notification failed."
+            ) from error
+
+        return {"notified": len(firing_alerts)}
+
     return app
 
 
@@ -501,6 +543,8 @@ def create_app_from_environment(
         rate_limiter=_rate_limiter_from_settings(settings),
         metrics_store=_metrics_from_settings(settings),
         prometheus_scrape_token=settings.prometheus_scrape_token,
+        alert_webhook_token=settings.alert_webhook_token,
+        alert_notifier=_alert_notifier_from_settings(settings),
     )
 
 
@@ -534,6 +578,22 @@ def _metrics_from_settings(settings: Settings) -> InMemoryApiMetrics | RedisApiM
         )
 
     return InMemoryApiMetrics()
+
+
+def _alert_notifier_from_settings(settings: Settings) -> TelegramNotifier | None:
+    if settings.alert_webhook_token is None:
+        return None
+
+    if settings.telegram_bot_token is None:
+        raise SettingsError("Missing required environment variable: OPS_TELEGRAM_BOT_TOKEN")
+
+    if settings.telegram_chat_id is None:
+        raise SettingsError("Missing required environment variable: OPS_TELEGRAM_CHAT_ID")
+
+    return TelegramNotifier(
+        bot_token=settings.telegram_bot_token,
+        chat_id=settings.telegram_chat_id,
+    )
 
 
 def _authenticator_from_settings(
@@ -591,6 +651,13 @@ def _authentication_scheme(
         return "ApiKey"
 
     return "Bearer"
+
+
+def _format_prometheus_alert(alert: PrometheusAlert) -> str:
+    alert_name = alert.labels.get("alertname", "Prometheus alert")
+    service = alert.labels.get("service") or alert.labels.get("job", "unknown service")
+    summary = alert.annotations.get("summary", "No summary provided.")
+    return f"Prometheus alert: {alert_name}\nService: {service}\nSummary: {summary}"
 
 
 def _to_response(

@@ -58,16 +58,14 @@ class FakeRedis:
     def __init__(self) -> None:
         self.values: dict[str, int] = {}
         self.expirations: dict[str, int] = {}
+        self.scripts: list[tuple[str, int, tuple[str, ...]]] = []
 
-    def incr(self, key: str) -> int:
+    def eval(self, script: str, numkeys: int, *keys_and_args: str) -> list[int]:
+        self.scripts.append((script, numkeys, keys_and_args))
+        key, window_seconds = keys_and_args
         self.values[key] = self.values.get(key, 0) + 1
-        return self.values[key]
-
-    def expire(self, key: str, seconds: int) -> None:
-        self.expirations[key] = seconds
-
-    def ttl(self, key: str) -> int:
-        return self.expirations[key]
+        self.expirations.setdefault(key, int(window_seconds))
+        return [self.values[key], self.expirations[key]]
 
 
 def test_redis_rate_limiter_shares_counter_by_role_and_endpoint() -> None:
@@ -77,3 +75,5 @@ def test_redis_rate_limiter_shares_counter_by_role_and_endpoint() -> None:
 
     assert first_limiter.acquire(role=ApiRole.OPERATOR, endpoint="investigations") is None
     assert second_limiter.acquire(role=ApiRole.OPERATOR, endpoint="investigations") == 15
+    assert len(redis_client.scripts) == 2
+    assert all(script[1] == 1 for script in redis_client.scripts)

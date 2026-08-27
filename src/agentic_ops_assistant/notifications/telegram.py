@@ -1,8 +1,14 @@
+from typing import Protocol
+
 import httpx2
 
 
 class TelegramNotificationError(RuntimeError):
     pass
+
+
+class NotificationSender(Protocol):
+    def send(self, text: str) -> None: ...
 
 
 class TelegramNotifier:

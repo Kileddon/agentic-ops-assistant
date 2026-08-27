@@ -10,4 +10,13 @@ services:
       - "127.0.0.1:9090:9090"
     volumes:
       - ./examples/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./examples/prometheus-alerts.yml:/etc/prometheus/prometheus-alerts.yml:ro
       - ./var/prometheus-scrape-token:/run/secrets/prometheus-scrape-token:ro
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ./examples/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./var/alert-webhook-token:/run/secrets/alert-webhook-token:ro

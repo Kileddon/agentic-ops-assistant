@@ -46,6 +46,14 @@ class FailingStatusProvider:
         raise PrometheusStatusError("Prometheus availability query failed.")
 
 
+class FakeNotifier:
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    def send(self, text: str) -> None:
+        self.messages.append(text)
+
+
 def test_health_check_returns_ok() -> None:
     client = TestClient(create_app())
 
@@ -53,6 +61,45 @@ def test_health_check_returns_ok() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_prometheus_alert_webhook_notifies_only_firing_alerts() -> None:
+    notifier = FakeNotifier()
+    client = TestClient(
+        create_app(
+            alert_webhook_token="alert-token",
+            alert_notifier=notifier,
+        ),
+    )
+    payload = {
+        "alerts": [
+            {
+                "status": "firing",
+                "labels": {"alertname": "TargetDown", "job": "demo-unreachable"},
+                "annotations": {"summary": "The demo target cannot be scraped."},
+            },
+            {
+                "status": "resolved",
+                "labels": {"alertname": "TargetDown", "job": "demo-unreachable"},
+            },
+        ],
+    }
+
+    rejected_response = client.post("/alerts/prometheus", json=payload)
+    accepted_response = client.post(
+        "/alerts/prometheus",
+        json=payload,
+        headers={"Authorization": "Bearer alert-token"},
+    )
+
+    assert rejected_response.status_code == 401
+    assert accepted_response.status_code == 200
+    assert accepted_response.json() == {"notified": 1}
+    assert notifier.messages == [
+        "Prometheus alert: TargetDown\n"
+        "Service: demo-unreachable\n"
+        "Summary: The demo target cannot be scraped.",
+    ]
 
 
 def test_create_investigation_returns_structured_report() -> None:

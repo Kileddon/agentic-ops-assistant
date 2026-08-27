@@ -32,6 +32,9 @@ class Settings:
     keycloak_audience: str | None
     redis_url: str | None
     prometheus_scrape_token: str | None
+    alert_webhook_token: str | None
+    telegram_bot_token: str | None
+    telegram_chat_id: str | None
 
 
 def load_settings(
@@ -86,6 +89,9 @@ def load_settings(
         keycloak_audience=_optional_secret(source, "OPS_KEYCLOAK_AUDIENCE"),
         redis_url=_optional_secret(source, "OPS_REDIS_URL"),
         prometheus_scrape_token=_optional_secret(source, "OPS_PROMETHEUS_SCRAPE_TOKEN"),
+        alert_webhook_token=_optional_secret(source, "OPS_ALERT_WEBHOOK_TOKEN"),
+        telegram_bot_token=_optional_secret(source, "OPS_TELEGRAM_BOT_TOKEN"),
+        telegram_chat_id=_optional_secret(source, "OPS_TELEGRAM_CHAT_ID"),
     )
 
 

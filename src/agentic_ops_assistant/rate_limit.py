@@ -3,15 +3,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Lock
 from time import monotonic
-from typing import Protocol
+from typing import Protocol, cast
 
 from agentic_ops_assistant.auth.models import ApiRole
 
 
 class RedisCounter(Protocol):
-    def incr(self, key: str) -> int: ...
-    def expire(self, key: str, seconds: int) -> object: ...
-    def ttl(self, key: str) -> int: ...
+    def eval(self, script: str, numkeys: int, *keys_and_args: str) -> object: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +64,14 @@ class FixedWindowRateLimiter:
 
 
 class RedisFixedWindowRateLimiter:
+    _ACQUIRE_SCRIPT = """
+        local count = redis.call('INCR', KEYS[1])
+        if count == 1 then
+            redis.call('EXPIRE', KEYS[1], ARGV[1])
+        end
+        return {count, redis.call('TTL', KEYS[1])}
+    """
+
     def __init__(
         self,
         client: RedisCounter,
@@ -81,9 +87,25 @@ class RedisFixedWindowRateLimiter:
 
     def acquire(self, *, role: ApiRole, endpoint: str) -> int | None:
         key = f"agentic_ops:rate_limit:{role.value}:{endpoint}"
-        count = self._client.incr(key)
-        if count == 1:
-            self._client.expire(key, self._window_seconds)
+        result = self._client.eval(
+            self._ACQUIRE_SCRIPT,
+            1,
+            key,
+            str(self._window_seconds),
+        )
+        if (
+            not isinstance(result, list)
+            or len(result) != 2
+            or not isinstance(result[0], int)
+            or not isinstance(result[1], int)
+        ):
+            raise RuntimeError("Redis rate limiter returned an invalid result.")
+
+        values = cast(list[object], result)
+        count = values[0]
+        ttl = values[1]
+        if not isinstance(count, int) or not isinstance(ttl, int):
+            raise RuntimeError("Redis rate limiter returned an invalid result.")
         if count <= self._max_requests:
             return None
-        return max(1, int(self._client.ttl(key)))
+        return max(1, ttl)

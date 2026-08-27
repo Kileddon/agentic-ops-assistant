@@ -1,0 +1,10 @@
+groups:
+  - name: agentic-ops-assistant
+    rules:
+      - alert: TargetDown
+        expr: up{job="demo-unreachable"} == 0
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "The demo-unreachable target cannot be scraped."
