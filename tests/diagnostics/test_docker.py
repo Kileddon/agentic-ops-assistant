@@ -23,7 +23,7 @@ def test_collector_uses_only_read_only_docker_commands() -> None:
         return {
             "inspect": "running",
             "stats": "0.50% 12MiB / 128MiB",
-            "logs": "first line\nsecond line\n",
+            "logs": "token=secret-value\nsecond line\n",
         }[arguments[0]]
 
     diagnostics = DockerDiagnosticsCollector(
@@ -33,7 +33,7 @@ def test_collector_uses_only_read_only_docker_commands() -> None:
 
     assert diagnostics.status == "running"
     assert diagnostics.resource_usage == "0.50% 12MiB / 128MiB"
-    assert diagnostics.recent_logs == ("first line", "second line")
+    assert diagnostics.recent_logs == ("token=[REDACTED]", "second line")
     assert commands == [
         ("inspect", "--format={{.State.Status}}", "demo-api"),
         ("stats", "--no-stream", "--format={{.CPUPerc}} {{.MemUsage}}", "demo-api"),

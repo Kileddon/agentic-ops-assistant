@@ -2,6 +2,8 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from agentic_ops_assistant.diagnostics.logs import redact_log_line
+
 
 class DiagnosticsError(RuntimeError):
     """Raised when read-only Docker diagnostics cannot be collected."""
@@ -54,7 +56,7 @@ class DockerDiagnosticsCollector:
             container=container,
             status=status,
             resource_usage=resource_usage,
-            recent_logs=tuple(line for line in logs.splitlines() if line),
+            recent_logs=tuple(redact_log_line(line) for line in logs.splitlines() if line),
         )
 
     def _run(self, arguments: tuple[str, ...]) -> str:

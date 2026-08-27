@@ -2,9 +2,17 @@ groups:
   - name: agentic-ops-assistant
     rules:
       - alert: TargetDown
-        expr: up{job="demo-unreachable"} == 0
+        expr: up{job="agentic-ops-assistant"} == 0
         for: 30s
         labels:
           severity: warning
         annotations:
-          summary: "The demo-unreachable target cannot be scraped."
+          summary: "The Agentic Ops Assistant API cannot be scraped."
+
+      - alert: ApiServerErrors
+        expr: increase(agentic_ops_http_response_status_total{status=~"5.."}[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The API returned one or more HTTP 5xx responses in five minutes."

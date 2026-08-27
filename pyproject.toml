@@ -27,6 +27,7 @@ ops-prune-audit = "agentic_ops_assistant.audit_retention_cli:main"
 ops-collect-diagnostics = "agentic_ops_assistant.diagnostics_cli:main"
 ops-archive-audit = "agentic_ops_assistant.audit_archive_cli:main"
 ops-backup-audit = "agentic_ops_assistant.audit_backup_cli:main"
+ops-backup-latest-audit = "agentic_ops_assistant.audit_backup_latest_cli:main"
 ops-restore-audit = "agentic_ops_assistant.audit_restore_cli:main"
 
 [tool.pytest.ini_options]

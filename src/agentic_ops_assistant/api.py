@@ -2,7 +2,7 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from secrets import compare_digest
 from time import perf_counter
-from typing import Annotated, Literal, cast
+from typing import Annotated, cast
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
@@ -13,6 +13,10 @@ from agentic_ops_assistant.actions.models import (
     PolicyDecision,
     PolicyStatus,
     ProposedAction,
+)
+from agentic_ops_assistant.alerting import (
+    PrometheusAlertWebhook,
+    format_prometheus_alert,
 )
 from agentic_ops_assistant.approval.models import ApprovalRequest
 from agentic_ops_assistant.approval.store import (
@@ -166,16 +170,6 @@ class ApiMetricsResponse(BaseModel):
     request_count: int
     status_counts: dict[str, int]
     total_duration_ms: float
-
-
-class PrometheusAlert(BaseModel):
-    status: Literal["firing", "resolved"]
-    labels: dict[str, str]
-    annotations: dict[str, str] = Field(default_factory=dict)
-
-
-class PrometheusAlertWebhook(BaseModel):
-    alerts: list[PrometheusAlert]
 
 
 def create_app(
@@ -498,7 +492,7 @@ def create_app(
         firing_alerts = tuple(alert for alert in webhook.alerts if alert.status == "firing")
         try:
             for alert in firing_alerts:
-                alert_notifier.send(_format_prometheus_alert(alert))
+                alert_notifier.send(format_prometheus_alert(alert))
         except TelegramNotificationError as error:
             raise HTTPException(
                 status_code=502, detail="Telegram alert notification failed."
@@ -651,13 +645,6 @@ def _authentication_scheme(
         return "ApiKey"
 
     return "Bearer"
-
-
-def _format_prometheus_alert(alert: PrometheusAlert) -> str:
-    alert_name = alert.labels.get("alertname", "Prometheus alert")
-    service = alert.labels.get("service") or alert.labels.get("job", "unknown service")
-    summary = alert.annotations.get("summary", "No summary provided.")
-    return f"Prometheus alert: {alert_name}\nService: {service}\nSummary: {summary}"
 
 
 def _to_response(

@@ -15,13 +15,20 @@ Start the API with the same token and Redis URL:
 $env:OPS_REDIS_URL = "redis://127.0.0.1:6379/0"
 $env:OPS_PROMETHEUS_SCRAPE_TOKEN = "choose-a-local-scrape-token"
 $env:OPS_ALERT_WEBHOOK_TOKEN = "choose-a-local-alert-token"
-$env:OPS_TELEGRAM_BOT_TOKEN = Read-Host "Telegram bot token"
-$env:OPS_TELEGRAM_CHAT_ID = "your-numeric-chat-id"
 ```
 
 Prometheus is available at `http://127.0.0.1:9090`, and Alertmanager at `http://127.0.0.1:9093`. The API must be reachable from Docker at port 8000 for the configured `host.docker.internal:8000` target.
 
-The included `TargetDown` rule deliberately monitors an unreachable local port. After 30 seconds, Alertmanager posts a signed webhook to the API, which sends one Telegram alert. This is a safe end-to-end test rule. Replace `demo-unreachable` with real monitored jobs only after defining service-specific alert conditions. The API must remain available for this local relay; a production deployment should run the notification relay separately from the monitored API.
+Run the independent relay in a separate terminal. It needs only the alert webhook token and Telegram configuration; it has no access to the API, actions, approvals, or knowledge data:
+
+```powershell
+$env:OPS_ALERT_WEBHOOK_TOKEN = "choose-a-local-alert-token"
+$env:OPS_TELEGRAM_BOT_TOKEN = Read-Host "Telegram bot token"
+$env:OPS_TELEGRAM_CHAT_ID = "your-numeric-chat-id"
+uv run uvicorn "agentic_ops_assistant.alert_relay:create_alert_relay_from_environment" --factory --host 0.0.0.0 --port 8001
+```
+
+`TargetDown` alerts when the main API cannot be scraped for 30 seconds, and `ApiServerErrors` alerts after HTTP 5xx responses. Since the relay runs independently on port 8001, it can notify Telegram even when the API on port 8000 is unavailable.
 
 Archive a verified audit log locally:
 
@@ -38,6 +45,13 @@ uv run ops-restore-audit --archive-file E:\ops-audit-backup/audit-YYYYMMDDTHHMMS
 ```
 
 Backup and restore both verify the hash-chain before copying. Restore refuses to overwrite an existing file.
+
+Set the backup location once for repeated backups; it should resolve outside the project disk:
+
+```powershell
+$env:OPS_AUDIT_BACKUP_DIRECTORY = "E:\ops-audit-backup"
+uv run ops-backup-latest-audit
+```
 
 Read-only diagnostics remain limited to `demo-api` and the latest 100 log lines:
 
@@ -60,3 +74,10 @@ uv run ops-collect-diagnostics demo-api
 The collector has a strict allowlist for this container and invokes only `docker
 inspect`, `docker stats --no-stream`, and `docker logs --tail 100`. It never starts,
 stops, restarts, removes, or executes commands in a container.
+
+Search the collected log snapshot by terms. The collector redacts common password,
+token, secret, API-key, and bearer-credential formats before printing results:
+
+```powershell
+uv run ops-collect-diagnostics demo-api --search "database timeout"
+```

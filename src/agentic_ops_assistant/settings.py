@@ -37,6 +37,19 @@ class Settings:
     telegram_chat_id: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class AlertRelaySettings:
+    webhook_token: str
+    telegram_bot_token: str
+    telegram_chat_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class AuditBackupSettings:
+    archive_directory: Path
+    backup_directory: Path
+
+
 def load_settings(
     environment: Mapping[str, str] | None = None,
 ) -> Settings:
@@ -92,6 +105,31 @@ def load_settings(
         alert_webhook_token=_optional_secret(source, "OPS_ALERT_WEBHOOK_TOKEN"),
         telegram_bot_token=_optional_secret(source, "OPS_TELEGRAM_BOT_TOKEN"),
         telegram_chat_id=_optional_secret(source, "OPS_TELEGRAM_CHAT_ID"),
+    )
+
+
+def load_alert_relay_settings(
+    environment: Mapping[str, str] | None = None,
+) -> AlertRelaySettings:
+    source = os.environ if environment is None else environment
+    return AlertRelaySettings(
+        webhook_token=_required_text(source, "OPS_ALERT_WEBHOOK_TOKEN"),
+        telegram_bot_token=_required_text(source, "OPS_TELEGRAM_BOT_TOKEN"),
+        telegram_chat_id=_required_text(source, "OPS_TELEGRAM_CHAT_ID"),
+    )
+
+
+def load_audit_backup_settings(
+    environment: Mapping[str, str] | None = None,
+) -> AuditBackupSettings:
+    source = os.environ if environment is None else environment
+    return AuditBackupSettings(
+        archive_directory=_optional_path(
+            source,
+            "OPS_AUDIT_ARCHIVE_DIRECTORY",
+            default=Path("var/audit-archive"),
+        ),
+        backup_directory=Path(_required_text(source, "OPS_AUDIT_BACKUP_DIRECTORY")),
     )
 
 

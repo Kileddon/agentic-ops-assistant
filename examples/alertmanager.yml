@@ -8,7 +8,7 @@ route:
 receivers:
   - name: telegram-alert-webhook
     webhook_configs:
-      - url: http://host.docker.internal:8000/alerts/prometheus
+      - url: http://host.docker.internal:8001/alerts/prometheus
         send_resolved: false
         http_config:
           authorization:

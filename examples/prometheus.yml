@@ -17,7 +17,3 @@ scrape_configs:
       credentials_file: /run/secrets/prometheus-scrape-token
     static_configs:
       - targets: ["host.docker.internal:8000"]
-
-  - job_name: demo-unreachable
-    static_configs:
-      - targets: ["host.docker.internal:65535"]
