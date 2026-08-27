@@ -27,6 +27,8 @@ class Settings:
     auditor_next_api_key: str | None
     rate_limit_requests: int
     rate_limit_window_seconds: float
+    keycloak_issuer: str | None
+    keycloak_audience: str | None
 
 
 def load_settings(
@@ -72,6 +74,8 @@ def load_settings(
             "OPS_RATE_LIMIT_WINDOW_SECONDS",
             default=60.0,
         ),
+        keycloak_issuer=_optional_secret(source, "OPS_KEYCLOAK_ISSUER"),
+        keycloak_audience=_optional_secret(source, "OPS_KEYCLOAK_AUDIENCE"),
     )
 
 

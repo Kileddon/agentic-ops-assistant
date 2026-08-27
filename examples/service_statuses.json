@@ -8,5 +8,15 @@
     "service": "catalog-api",
     "status": "healthy",
     "summary": "Operating within normal latency and error-rate limits."
+  },
+  {
+    "service": "orders-worker",
+    "status": "degraded",
+    "summary": "Consumer lag is increasing on the order-events topic."
+  },
+  {
+    "service": "reporting-api",
+    "status": "degraded",
+    "summary": "Filesystem usage is close to the configured capacity limit."
   }
 ]

@@ -283,6 +283,33 @@ def test_create_investigation_rejects_blank_query() -> None:
     assert response.status_code == 422
 
 
+def test_health_check_returns_request_correlation_id() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/health", headers={"X-Request-ID": "request-123"})
+
+    assert response.headers["X-Request-ID"] == "request-123"
+
+
+def test_metrics_are_available_to_an_auditor() -> None:
+    client = TestClient(
+        create_app(
+            authenticator=StaticApiKeyAuthenticator(
+                operator_key="operator-key",
+                approver_key="approver-key",
+                auditor_key="auditor-key",
+            ),
+        ),
+    )
+    client.get("/health")
+
+    response = client.get("/metrics", headers={"X-API-Key": "auditor-key"})
+
+    assert response.status_code == 200
+    assert response.json()["request_count"] >= 1
+    assert response.json()["status_counts"]["200"] >= 1
+
+
 def test_api_key_roles_protect_sensitive_endpoints() -> None:
     status = ServiceStatus(
         service="payments-api",

@@ -10,5 +10,17 @@
     "title": "Cache eviction",
     "content": "Review cache capacity and eviction rate.",
     "tags": ["cache"]
+  },
+  {
+    "id": "consumer-lag",
+    "title": "Message consumer lag",
+    "content": "Check consumer throughput, partition assignment, and failed message processing before increasing consumer capacity.",
+    "tags": ["kafka", "queue", "consumer", "lag"]
+  },
+  {
+    "id": "disk-pressure",
+    "title": "Disk pressure",
+    "content": "Check filesystem usage, log growth, temporary files, and database volume capacity before removing data.",
+    "tags": ["disk", "storage", "filesystem", "capacity"]
   }
 ]

@@ -1,8 +1,10 @@
-from collections.abc import Callable, Mapping, Sequence
+import logging
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from time import perf_counter
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator
 
 from agentic_ops_assistant.actions.models import (
@@ -24,6 +26,7 @@ from agentic_ops_assistant.audit.store import (
     InMemoryAuditStore,
     JsonlAuditStore,
 )
+from agentic_ops_assistant.auth.keycloak import KeycloakJwtAuthenticator
 from agentic_ops_assistant.auth.models import ApiRole, Principal
 from agentic_ops_assistant.auth.service import StaticApiKeyAuthenticator
 from agentic_ops_assistant.embeddings.cache import CachingTextEmbedder
@@ -38,6 +41,7 @@ from agentic_ops_assistant.knowledge.models import (
     KnowledgeMatch,
     SemanticKnowledgeMatch,
 )
+from agentic_ops_assistant.observability import InMemoryApiMetrics
 from agentic_ops_assistant.operations.prometheus import (
     PrometheusStatusError,
     PrometheusStatusProvider,
@@ -55,6 +59,8 @@ from agentic_ops_assistant.summarization.service import (
     InvestigationSummaryService,
     SummaryClient,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class InvestigationRequest(BaseModel):
@@ -140,6 +146,12 @@ class AuditEventResponse(BaseModel):
     details: dict[str, str]
 
 
+class ApiMetricsResponse(BaseModel):
+    request_count: int
+    status_counts: dict[str, int]
+    total_duration_ms: float
+
+
 def create_app(
     *,
     articles: Sequence[KnowledgeArticle] = (),
@@ -149,7 +161,7 @@ def create_app(
     semantic_embedder: TextEmbedder | None = None,
     status_provider: ServiceStatusProvider | None = None,
     audit_store: AuditStore | None = None,
-    authenticator: StaticApiKeyAuthenticator | None = None,
+    authenticator: StaticApiKeyAuthenticator | KeycloakJwtAuthenticator | None = None,
     rate_limiter: FixedWindowRateLimiter | None = None,
 ) -> FastAPI:
     app = FastAPI(
@@ -160,28 +172,52 @@ def create_app(
     approval_service = ApprovalService(store)
     event_store = InMemoryAuditStore() if audit_store is None else audit_store
     audit_service = AuditService(event_store)
+    metrics = InMemoryApiMetrics()
+
+    @app.middleware("http")
+    async def add_request_observability(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        request_id = request.headers.get("X-Request-ID") or str(uuid4())
+        started_at = perf_counter()
+        response = await call_next(request)
+        duration_ms = (perf_counter() - started_at) * 1000
+        metrics.record(status_code=response.status_code, duration_ms=duration_ms)
+        response.headers["X-Request-ID"] = request_id
+        _LOGGER.info(
+            "request_completed path=%s status=%s duration_ms=%.1f request_id=%s",
+            request.url.path,
+            response.status_code,
+            duration_ms,
+            request_id,
+        )
+        return response
 
     def require_role(endpoint: str, *allowed_roles: ApiRole) -> Callable[..., Principal]:
         def dependency(
             api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+            authorization: Annotated[str | None, Header()] = None,
         ) -> Principal:
             if authenticator is None:
                 return Principal(ApiRole.OPERATOR)
 
-            if api_key is None:
+            credential = _credential_from_headers(authenticator, api_key, authorization)
+
+            if credential is None:
                 raise HTTPException(
                     status_code=401,
-                    detail="API key is required.",
-                    headers={"WWW-Authenticate": "ApiKey"},
+                    detail="Authentication credentials are required.",
+                    headers={"WWW-Authenticate": _authentication_scheme(authenticator)},
                 )
 
-            principal = authenticator.authenticate(api_key)
+            principal = authenticator.authenticate(credential)
 
             if principal is None:
                 raise HTTPException(
                     status_code=401,
-                    detail="Invalid API key.",
-                    headers={"WWW-Authenticate": "ApiKey"},
+                    detail="Invalid authentication credentials.",
+                    headers={"WWW-Authenticate": _authentication_scheme(authenticator)},
                 )
 
             if principal.role not in allowed_roles:
@@ -391,6 +427,17 @@ def create_app(
 
         return [_to_audit_event_response(event) for event in events]
 
+    @app.get("/metrics", response_model=ApiMetricsResponse)
+    def get_metrics(
+        principal: Annotated[Principal, Depends(require_role("metrics", ApiRole.AUDITOR))],
+    ) -> ApiMetricsResponse:
+        snapshot = metrics.snapshot()
+        return ApiMetricsResponse(
+            request_count=snapshot.request_count,
+            status_counts=snapshot.status_counts,
+            total_duration_ms=snapshot.total_duration_ms,
+        )
+
     return app
 
 
@@ -431,7 +478,21 @@ def create_app_from_environment(
     )
 
 
-def _authenticator_from_settings(settings: Settings) -> StaticApiKeyAuthenticator:
+def _authenticator_from_settings(
+    settings: Settings,
+) -> StaticApiKeyAuthenticator | KeycloakJwtAuthenticator:
+    if settings.keycloak_issuer is not None or settings.keycloak_audience is not None:
+        if settings.keycloak_issuer is None:
+            raise SettingsError("Missing required environment variable: OPS_KEYCLOAK_ISSUER")
+
+        if settings.keycloak_audience is None:
+            raise SettingsError("Missing required environment variable: OPS_KEYCLOAK_AUDIENCE")
+
+        return KeycloakJwtAuthenticator(
+            issuer=settings.keycloak_issuer,
+            audience=settings.keycloak_audience,
+        )
+
     if settings.operator_api_key is None:
         raise SettingsError("Missing required environment variable: OPS_OPERATOR_API_KEY")
 
@@ -449,6 +510,29 @@ def _authenticator_from_settings(settings: Settings) -> StaticApiKeyAuthenticato
         approver_next_key=settings.approver_next_api_key,
         auditor_next_key=settings.auditor_next_api_key,
     )
+
+
+def _credential_from_headers(
+    authenticator: StaticApiKeyAuthenticator | KeycloakJwtAuthenticator,
+    api_key: str | None,
+    authorization: str | None,
+) -> str | None:
+    if isinstance(authenticator, StaticApiKeyAuthenticator):
+        return api_key
+
+    if authorization is None or not authorization.startswith("Bearer "):
+        return None
+
+    return authorization.removeprefix("Bearer ").strip() or None
+
+
+def _authentication_scheme(
+    authenticator: StaticApiKeyAuthenticator | KeycloakJwtAuthenticator,
+) -> str:
+    if isinstance(authenticator, StaticApiKeyAuthenticator):
+        return "ApiKey"
+
+    return "Bearer"
 
 
 def _to_response(

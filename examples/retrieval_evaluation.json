@@ -20,6 +20,22 @@
     "expected_article_ids": ["cache-eviction"]
   },
   {
+    "query": "Kafka consumers are falling behind",
+    "expected_article_ids": ["consumer-lag"]
+  },
+  {
+    "query": "order event queue backlog keeps growing",
+    "expected_article_ids": ["consumer-lag"]
+  },
+  {
+    "query": "the filesystem is almost full",
+    "expected_article_ids": ["disk-pressure"]
+  },
+  {
+    "query": "database volume has no remaining capacity",
+    "expected_article_ids": ["disk-pressure"]
+  },
+  {
     "query": "database and cache performance issue",
     "expected_article_ids": ["database-timeout", "cache-eviction"]
   },

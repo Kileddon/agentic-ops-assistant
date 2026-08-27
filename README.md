@@ -11,6 +11,8 @@ Agentic Ops Assistant is a local-first operations triage service. It combines se
 - Propose actions through deterministic policy rules.
 - Require explicit approval for actions that need it.
 - Generate validated, structured local-model summaries of investigations.
+- Authenticate API callers with local Keycloak OIDC access tokens.
+- Record correlation IDs and process-local API metrics for auditors.
 - Expose the workflow through CLI commands and a FastAPI application.
 
 ## Safety model
@@ -19,7 +21,7 @@ The language model is limited to summarization. It has no tools, production cred
 
 Action proposals and policy decisions are deterministic Python code. Approval records model a human decision, but there is intentionally no executor that can alter an external system.
 
-The HTTP application writes an append-only local audit trail for investigations, approval events, and status-provider failures. It records operational metadata, not raw queries or LLM prompts.
+The HTTP application writes a hash-chained local audit trail for investigations, approval events, and status-provider failures. It records operational metadata, not raw queries or LLM prompts.
 
 The environment-based HTTP application uses separate API keys for operator, approver, and auditor roles. It is intended for local use until it is deployed behind HTTPS and a managed identity boundary.
 
@@ -130,8 +132,9 @@ Protected endpoints use a fixed-window limit of 60 requests per 60 seconds for e
 - `POST /investigation-summaries`
 - `POST /approvals/{approval_id}/decisions`
 - `GET /audit-events`
+- `GET /metrics`
 
-`/health` is public. Investigations and summaries require the operator key, approval decisions require the approver key, and audit events require the auditor key.
+`/health` is public. Investigations and summaries require the operator role, approval decisions require the approver role, and audit events and metrics require the auditor role.
 
 Example investigation request:
 
@@ -145,6 +148,8 @@ Invoke-RestMethod `
 ```
 
 For a public HTTPS deployment with Caddy while keeping Uvicorn on loopback, see [HTTPS deployment](docs/deployment.md).
+
+For local OIDC authentication with Keycloak, see [Local Keycloak](docs/keycloak.md).
 
 ## Development
 

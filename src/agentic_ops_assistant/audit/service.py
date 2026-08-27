@@ -35,6 +35,9 @@ class AuditService:
     def list_events(self, limit: int) -> tuple[AuditEvent, ...]:
         return self._store.list_events(limit)
 
+    def prune_before(self, cutoff: datetime) -> int:
+        return self._store.prune_before(cutoff)
+
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
