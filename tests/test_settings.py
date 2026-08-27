@@ -85,6 +85,44 @@ def test_load_settings_reads_optional_next_api_keys(tmp_path: Path) -> None:
     assert settings.auditor_next_api_key is None
 
 
+def test_load_settings_reads_rate_limit_configuration(tmp_path: Path) -> None:
+    knowledge_file = tmp_path / "knowledge.json"
+    knowledge_file.touch()
+    status_file = tmp_path / "service_statuses.json"
+    status_file.touch()
+
+    settings = load_settings(
+        {
+            "OPS_KNOWLEDGE_FILE": str(knowledge_file),
+            "OPS_SERVICE_STATUS_FILE": str(status_file),
+            "OPS_RATE_LIMIT_REQUESTS": "5",
+            "OPS_RATE_LIMIT_WINDOW_SECONDS": "30.5",
+        },
+    )
+
+    assert settings.rate_limit_requests == 5
+    assert settings.rate_limit_window_seconds == 30.5
+
+
+def test_load_settings_rejects_invalid_rate_limit_configuration(tmp_path: Path) -> None:
+    knowledge_file = tmp_path / "knowledge.json"
+    knowledge_file.touch()
+    status_file = tmp_path / "service_statuses.json"
+    status_file.touch()
+
+    with pytest.raises(
+        SettingsError,
+        match="OPS_RATE_LIMIT_REQUESTS must be positive",
+    ):
+        load_settings(
+            {
+                "OPS_KNOWLEDGE_FILE": str(knowledge_file),
+                "OPS_SERVICE_STATUS_FILE": str(status_file),
+                "OPS_RATE_LIMIT_REQUESTS": "0",
+            },
+        )
+
+
 def test_load_settings_rejects_blank_ollama_model(tmp_path: Path) -> None:
     knowledge_file = tmp_path / "knowledge.json"
     knowledge_file.touch()

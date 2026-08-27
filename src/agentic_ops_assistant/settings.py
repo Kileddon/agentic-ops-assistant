@@ -25,6 +25,8 @@ class Settings:
     operator_next_api_key: str | None
     approver_next_api_key: str | None
     auditor_next_api_key: str | None
+    rate_limit_requests: int
+    rate_limit_window_seconds: float
 
 
 def load_settings(
@@ -60,6 +62,16 @@ def load_settings(
         operator_next_api_key=_optional_secret(source, "OPS_OPERATOR_NEXT_API_KEY"),
         approver_next_api_key=_optional_secret(source, "OPS_APPROVER_NEXT_API_KEY"),
         auditor_next_api_key=_optional_secret(source, "OPS_AUDITOR_NEXT_API_KEY"),
+        rate_limit_requests=_optional_positive_int(
+            source,
+            "OPS_RATE_LIMIT_REQUESTS",
+            default=60,
+        ),
+        rate_limit_window_seconds=_optional_positive_float(
+            source,
+            "OPS_RATE_LIMIT_WINDOW_SECONDS",
+            default=60.0,
+        ),
     )
 
 
@@ -158,3 +170,47 @@ def _optional_secret(
         raise SettingsError(f"Environment variable {variable_name} must not be blank")
 
     return raw_value
+
+
+def _optional_positive_int(
+    environment: Mapping[str, str],
+    variable_name: str,
+    *,
+    default: int,
+) -> int:
+    raw_value = environment.get(variable_name)
+
+    if raw_value is None:
+        return default
+
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise SettingsError(f"Environment variable {variable_name} must be an integer") from error
+
+    if value <= 0:
+        raise SettingsError(f"Environment variable {variable_name} must be positive")
+
+    return value
+
+
+def _optional_positive_float(
+    environment: Mapping[str, str],
+    variable_name: str,
+    *,
+    default: float,
+) -> float:
+    raw_value = environment.get(variable_name)
+
+    if raw_value is None:
+        return default
+
+    try:
+        value = float(raw_value)
+    except ValueError as error:
+        raise SettingsError(f"Environment variable {variable_name} must be a number") from error
+
+    if value <= 0:
+        raise SettingsError(f"Environment variable {variable_name} must be positive")
+
+    return value

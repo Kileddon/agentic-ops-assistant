@@ -8,6 +8,7 @@ from agentic_ops_assistant.auth.service import StaticApiKeyAuthenticator
 from agentic_ops_assistant.knowledge.models import KnowledgeArticle
 from agentic_ops_assistant.operations.prometheus import PrometheusStatusError
 from agentic_ops_assistant.operations.status import ServiceHealth, ServiceStatus
+from agentic_ops_assistant.rate_limit import FixedWindowRateLimiter
 from agentic_ops_assistant.summarization.models import GeneratedSummary
 
 
@@ -344,6 +345,35 @@ def test_api_key_roles_protect_sensitive_endpoints() -> None:
     assert audit_response.status_code == 200
 
 
+def test_rate_limit_rejects_a_protected_endpoint_and_keeps_health_public() -> None:
+    client = TestClient(
+        create_app(
+            authenticator=StaticApiKeyAuthenticator(
+                operator_key="operator-key",
+                approver_key="approver-key",
+                auditor_key="auditor-key",
+            ),
+            rate_limiter=FixedWindowRateLimiter(max_requests=1, window_seconds=60.0),
+        ),
+    )
+
+    first_response = client.post(
+        "/investigations",
+        json={"service": "payments-api", "query": "database timeout"},
+        headers={"X-API-Key": "operator-key"},
+    )
+    limited_response = client.post(
+        "/investigations",
+        json={"service": "payments-api", "query": "database timeout"},
+        headers={"X-API-Key": "operator-key"},
+    )
+
+    assert first_response.status_code == 200
+    assert limited_response.status_code == 429
+    assert limited_response.headers["Retry-After"] == "60"
+    assert client.get("/health").status_code == 200
+
+
 def test_create_app_from_environment_loads_application_data(
     tmp_path: Path,
 ) -> None:
@@ -384,6 +414,7 @@ def test_create_app_from_environment_loads_application_data(
                 "OPS_OPERATOR_API_KEY": "operator-key",
                 "OPS_APPROVER_API_KEY": "approver-key",
                 "OPS_AUDITOR_API_KEY": "auditor-key",
+                "OPS_RATE_LIMIT_REQUESTS": "1",
             },
         ),
     )
@@ -396,8 +427,17 @@ def test_create_app_from_environment_loads_application_data(
         },
         headers={"X-API-Key": "operator-key"},
     )
+    limited_response = client.post(
+        "/investigations",
+        json={
+            "service": "payments-api",
+            "query": "database timeout",
+        },
+        headers={"X-API-Key": "operator-key"},
+    )
 
     assert response.status_code == 200
+    assert limited_response.status_code == 429
     assert response.json()["service_status"]["health"] == "degraded"
     assert response.json()["knowledge_matches"][0]["id"] == "database-timeout"
 

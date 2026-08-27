@@ -45,6 +45,7 @@ from agentic_ops_assistant.operations.prometheus import (
 from agentic_ops_assistant.operations.provider import ServiceStatusProvider
 from agentic_ops_assistant.operations.status import ServiceStatus
 from agentic_ops_assistant.operations.status_loader import load_service_statuses
+from agentic_ops_assistant.rate_limit import FixedWindowRateLimiter
 from agentic_ops_assistant.settings import Settings, SettingsError, load_settings
 from agentic_ops_assistant.summarization.client import (
     OllamaSummaryClient,
@@ -149,6 +150,7 @@ def create_app(
     status_provider: ServiceStatusProvider | None = None,
     audit_store: AuditStore | None = None,
     authenticator: StaticApiKeyAuthenticator | None = None,
+    rate_limiter: FixedWindowRateLimiter | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agentic Ops Assistant",
@@ -159,7 +161,7 @@ def create_app(
     event_store = InMemoryAuditStore() if audit_store is None else audit_store
     audit_service = AuditService(event_store)
 
-    def require_role(*allowed_roles: ApiRole) -> Callable[..., Principal]:
+    def require_role(endpoint: str, *allowed_roles: ApiRole) -> Callable[..., Principal]:
         def dependency(
             api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
         ) -> Principal:
@@ -184,6 +186,16 @@ def create_app(
 
             if principal.role not in allowed_roles:
                 raise HTTPException(status_code=403, detail="Insufficient API role.")
+
+            if rate_limiter is not None:
+                retry_after = rate_limiter.acquire(role=principal.role, endpoint=endpoint)
+
+                if retry_after is not None:
+                    raise HTTPException(
+                        status_code=429,
+                        detail="Rate limit exceeded.",
+                        headers={"Retry-After": str(retry_after)},
+                    )
 
             return principal
 
@@ -245,7 +257,7 @@ def create_app(
     @app.post("/investigations", response_model=InvestigationResponse)
     def create_investigation(
         request: InvestigationRequest,
-        principal: Annotated[Principal, Depends(require_role(ApiRole.OPERATOR))],
+        principal: Annotated[Principal, Depends(require_role("investigations", ApiRole.OPERATOR))],
     ) -> InvestigationResponse:
         report = build_report(request, principal)
         approval_request: ApprovalRequest | None = None
@@ -292,7 +304,10 @@ def create_app(
     )
     def create_investigation_summary(
         request: InvestigationRequest,
-        principal: Annotated[Principal, Depends(require_role(ApiRole.OPERATOR))],
+        principal: Annotated[
+            Principal,
+            Depends(require_role("investigation-summaries", ApiRole.OPERATOR)),
+        ],
     ) -> InvestigationSummaryResponse:
         if summary_client is None:
             raise HTTPException(
@@ -334,7 +349,10 @@ def create_app(
     def decide_pending_approval(
         approval_id: UUID,
         request: ApprovalDecisionRequest,
-        principal: Annotated[Principal, Depends(require_role(ApiRole.APPROVER))],
+        principal: Annotated[
+            Principal,
+            Depends(require_role("approval-decisions", ApiRole.APPROVER)),
+        ],
     ) -> ApprovalResponse:
         try:
             approval_request = approval_service.decide(
@@ -360,7 +378,7 @@ def create_app(
 
     @app.get("/audit-events", response_model=list[AuditEventResponse])
     def list_audit_events(
-        principal: Annotated[Principal, Depends(require_role(ApiRole.AUDITOR))],
+        principal: Annotated[Principal, Depends(require_role("audit-events", ApiRole.AUDITOR))],
         limit: int = Query(default=100, ge=1, le=500),
     ) -> list[AuditEventResponse]:
         try:
@@ -406,6 +424,10 @@ def create_app_from_environment(
         status_provider=status_provider,
         audit_store=JsonlAuditStore(settings.audit_log_file),
         authenticator=_authenticator_from_settings(settings),
+        rate_limiter=FixedWindowRateLimiter(
+            max_requests=settings.rate_limit_requests,
+            window_seconds=settings.rate_limit_window_seconds,
+        ),
     )
 
 

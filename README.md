@@ -123,6 +123,8 @@ For a no-downtime key replacement, temporarily set the optional matching variabl
 
 The API is then available at `http://127.0.0.1:8000`.
 
+Protected endpoints use a fixed-window limit of 60 requests per 60 seconds for each role and endpoint. Adjust it with `OPS_RATE_LIMIT_REQUESTS` and `OPS_RATE_LIMIT_WINDOW_SECONDS`. The limit is local to one application process.
+
 - `GET /health`
 - `POST /investigations`
 - `POST /investigation-summaries`
@@ -141,6 +143,8 @@ Invoke-RestMethod `
   -ContentType "application/json" `
   -Body '{"service":"payments-api","query":"database timeout","limit":3}'
 ```
+
+For a public HTTPS deployment with Caddy while keeping Uvicorn on loopback, see [HTTPS deployment](docs/deployment.md).
 
 ## Development
 
