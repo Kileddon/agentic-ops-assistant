@@ -310,6 +310,20 @@ def test_metrics_are_available_to_an_auditor() -> None:
     assert response.json()["status_counts"]["200"] >= 1
 
 
+def test_prometheus_metrics_require_a_dedicated_machine_credential() -> None:
+    client = TestClient(create_app(prometheus_scrape_token="prometheus-token"))
+
+    rejected_response = client.get("/metrics/prometheus")
+    response = client.get(
+        "/metrics/prometheus",
+        headers={"Authorization": "Bearer prometheus-token"},
+    )
+
+    assert rejected_response.status_code == 401
+    assert response.status_code == 200
+    assert "agentic_ops_http_requests_total" in response.text
+
+
 def test_api_key_roles_protect_sensitive_endpoints() -> None:
     status = ServiceStatus(
         service="payments-api",

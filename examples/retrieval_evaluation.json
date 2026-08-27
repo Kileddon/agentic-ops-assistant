@@ -36,6 +36,18 @@
     "expected_article_ids": ["disk-pressure"]
   },
   {
+    "query": "HTTP gateway returns 502 after deployment",
+    "expected_article_ids": ["http-5xx-errors"]
+  },
+  {
+    "query": "Kubernetes pod is killed because it exceeds memory",
+    "expected_article_ids": ["container-out-of-memory"]
+  },
+  {
+    "query": "build job fails after a dependency update",
+    "expected_article_ids": ["ci-pipeline-failure"]
+  },
+  {
     "query": "database and cache performance issue",
     "expected_article_ids": ["database-timeout", "cache-eviction"]
   },

@@ -12,7 +12,7 @@ Agentic Ops Assistant is a local-first operations triage service. It combines se
 - Require explicit approval for actions that need it.
 - Generate validated, structured local-model summaries of investigations.
 - Authenticate API callers with local Keycloak OIDC access tokens.
-- Record correlation IDs and process-local API metrics for auditors.
+- Record correlation IDs, with optional Redis-backed shared limits and API metrics.
 - Expose the workflow through CLI commands and a FastAPI application.
 
 ## Safety model
@@ -23,13 +23,16 @@ Action proposals and policy decisions are deterministic Python code. Approval re
 
 The HTTP application writes a hash-chained local audit trail for investigations, approval events, and status-provider failures. It records operational metadata, not raw queries or LLM prompts.
 
-The environment-based HTTP application uses separate API keys for operator, approver, and auditor roles. It is intended for local use until it is deployed behind HTTPS and a managed identity boundary.
+The environment-based HTTP application can use separate API keys for operator, approver,
+and auditor roles, or Keycloak OIDC access tokens when Keycloak settings are configured.
+Deploy it behind HTTPS and a managed identity boundary outside local use.
 
 ## Requirements
 
 - Python 3.13 or 3.14
 - [uv](https://docs.astral.sh/uv/)
 - [Ollama](https://ollama.com/) for semantic search and local summaries
+- Docker Desktop for the optional Redis, Prometheus, and diagnostics examples
 
 Install dependencies:
 
@@ -125,7 +128,7 @@ For a no-downtime key replacement, temporarily set the optional matching variabl
 
 The API is then available at `http://127.0.0.1:8000`.
 
-Protected endpoints use a fixed-window limit of 60 requests per 60 seconds for each role and endpoint. Adjust it with `OPS_RATE_LIMIT_REQUESTS` and `OPS_RATE_LIMIT_WINDOW_SECONDS`. The limit is local to one application process.
+Protected endpoints use a fixed-window limit of 60 requests per 60 seconds for each role and endpoint. Adjust it with `OPS_RATE_LIMIT_REQUESTS` and `OPS_RATE_LIMIT_WINDOW_SECONDS`. Set `OPS_REDIS_URL` to share this limit and API metrics across local API processes; without it, both remain process-local.
 
 - `GET /health`
 - `POST /investigations`
@@ -133,8 +136,9 @@ Protected endpoints use a fixed-window limit of 60 requests per 60 seconds for e
 - `POST /approvals/{approval_id}/decisions`
 - `GET /audit-events`
 - `GET /metrics`
+- `GET /metrics/prometheus`
 
-`/health` is public. Investigations and summaries require the operator role, approval decisions require the approver role, and audit events and metrics require the auditor role.
+`/health` is public. Investigations and summaries require the operator role, approval decisions require the approver role, and audit events and metrics require the auditor role. `/metrics/prometheus` uses its own bearer scrape credential, set through `OPS_PROMETHEUS_SCRAPE_TOKEN`, rather than a user credential.
 
 Example investigation request:
 
@@ -150,6 +154,8 @@ Invoke-RestMethod `
 For a public HTTPS deployment with Caddy while keeping Uvicorn on loopback, see [HTTPS deployment](docs/deployment.md).
 
 For local OIDC authentication with Keycloak, see [Local Keycloak](docs/keycloak.md).
+
+For local Redis, Prometheus, audit archive, and diagnostics setup, see [Local infrastructure](docs/infrastructure.md).
 
 ## Development
 

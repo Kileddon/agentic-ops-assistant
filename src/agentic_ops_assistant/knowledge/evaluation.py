@@ -118,7 +118,7 @@ def evaluate_semantic_retrieval(
     embedder: TextEmbedder,
     *,
     limit: int = 3,
-    minimum_similarity: float = 0.6,
+    minimum_similarity: float = 0.58,
 ) -> RetrievalEvaluationReport:
     article_ids = {article.id for article in articles}
 

@@ -3,8 +3,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Lock
 from time import monotonic
+from typing import Protocol
 
 from agentic_ops_assistant.auth.models import ApiRole
+
+
+class RedisCounter(Protocol):
+    def incr(self, key: str) -> int: ...
+    def expire(self, key: str, seconds: int) -> object: ...
+    def ttl(self, key: str) -> int: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,3 +63,27 @@ class FixedWindowRateLimiter:
                 request_count=window.request_count + 1,
             )
             return None
+
+
+class RedisFixedWindowRateLimiter:
+    def __init__(
+        self,
+        client: RedisCounter,
+        *,
+        max_requests: int,
+        window_seconds: int,
+    ) -> None:
+        if max_requests <= 0 or window_seconds <= 0:
+            raise ValueError("Redis rate-limit configuration must be positive.")
+        self._client = client
+        self._max_requests = max_requests
+        self._window_seconds = window_seconds
+
+    def acquire(self, *, role: ApiRole, endpoint: str) -> int | None:
+        key = f"agentic_ops:rate_limit:{role.value}:{endpoint}"
+        count = self._client.incr(key)
+        if count == 1:
+            self._client.expire(key, self._window_seconds)
+        if count <= self._max_requests:
+            return None
+        return max(1, int(self._client.ttl(key)))

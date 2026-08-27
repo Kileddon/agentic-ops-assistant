@@ -33,7 +33,7 @@ def investigate(
     statuses: Sequence[ServiceStatus] = (),
     limit: int = 5,
     semantic_embedder: TextEmbedder | None = None,
-    minimum_similarity: float = 0.6,
+    minimum_similarity: float = 0.58,
     status_provider: ServiceStatusProvider | None = None,
 ) -> InvestigationReport:
     service_status = (

@@ -1,10 +1,12 @@
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from secrets import compare_digest
 from time import perf_counter
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, field_validator
 
 from agentic_ops_assistant.actions.models import (
@@ -45,7 +47,12 @@ from agentic_ops_assistant.knowledge.models import (
     KnowledgeMatch,
     SemanticKnowledgeMatch,
 )
-from agentic_ops_assistant.observability import InMemoryApiMetrics
+from agentic_ops_assistant.observability import (
+    InMemoryApiMetrics,
+    RedisApiMetrics,
+    RedisMetricsStore,
+    render_prometheus_metrics,
+)
 from agentic_ops_assistant.operations.prometheus import (
     PrometheusStatusError,
     PrometheusStatusProvider,
@@ -53,7 +60,7 @@ from agentic_ops_assistant.operations.prometheus import (
 from agentic_ops_assistant.operations.provider import ServiceStatusProvider
 from agentic_ops_assistant.operations.status import ServiceStatus
 from agentic_ops_assistant.operations.status_loader import load_service_statuses
-from agentic_ops_assistant.rate_limit import FixedWindowRateLimiter
+from agentic_ops_assistant.rate_limit import FixedWindowRateLimiter, RedisFixedWindowRateLimiter
 from agentic_ops_assistant.settings import Settings, SettingsError, load_settings
 from agentic_ops_assistant.summarization.client import (
     OllamaSummaryClient,
@@ -166,7 +173,9 @@ def create_app(
     status_provider: ServiceStatusProvider | None = None,
     audit_store: AuditStore | None = None,
     authenticator: StaticApiKeyAuthenticator | KeycloakJwtAuthenticator | None = None,
-    rate_limiter: FixedWindowRateLimiter | None = None,
+    rate_limiter: FixedWindowRateLimiter | RedisFixedWindowRateLimiter | None = None,
+    metrics_store: InMemoryApiMetrics | RedisApiMetrics | None = None,
+    prometheus_scrape_token: str | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agentic Ops Assistant",
@@ -176,7 +185,7 @@ def create_app(
     approval_service = ApprovalService(store)
     event_store = InMemoryAuditStore() if audit_store is None else audit_store
     audit_service = AuditService(event_store)
-    metrics = InMemoryApiMetrics()
+    metrics = InMemoryApiMetrics() if metrics_store is None else metrics_store
 
     @app.middleware("http")
     async def add_request_observability(
@@ -442,6 +451,19 @@ def create_app(
             total_duration_ms=snapshot.total_duration_ms,
         )
 
+    @app.get("/metrics/prometheus", response_class=PlainTextResponse)
+    def get_prometheus_metrics(
+        authorization: Annotated[str | None, Header()] = None,
+    ) -> PlainTextResponse:
+        if prometheus_scrape_token is None:
+            raise HTTPException(status_code=503, detail="Prometheus scrape is not configured.")
+
+        expected_header = f"Bearer {prometheus_scrape_token}"
+        if authorization is None or not compare_digest(authorization, expected_header):
+            raise HTTPException(status_code=401, detail="Invalid Prometheus scrape credentials.")
+
+        return PlainTextResponse(render_prometheus_metrics(metrics.snapshot()))
+
     return app
 
 
@@ -476,11 +498,42 @@ def create_app_from_environment(
         audit_store=JsonlAuditStore(settings.audit_log_file),
         approval_store=SqliteApprovalStore(str(settings.approval_database_file)),
         authenticator=_authenticator_from_settings(settings),
-        rate_limiter=FixedWindowRateLimiter(
-            max_requests=settings.rate_limit_requests,
-            window_seconds=settings.rate_limit_window_seconds,
-        ),
+        rate_limiter=_rate_limiter_from_settings(settings),
+        metrics_store=_metrics_from_settings(settings),
+        prometheus_scrape_token=settings.prometheus_scrape_token,
     )
+
+
+def _rate_limiter_from_settings(
+    settings: Settings,
+) -> FixedWindowRateLimiter | RedisFixedWindowRateLimiter:
+    if settings.redis_url is not None:
+        import redis
+
+        return RedisFixedWindowRateLimiter(
+            redis.Redis.from_url(settings.redis_url, decode_responses=True),
+            max_requests=settings.rate_limit_requests,
+            window_seconds=int(settings.rate_limit_window_seconds),
+        )
+
+    return FixedWindowRateLimiter(
+        max_requests=settings.rate_limit_requests,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
+
+
+def _metrics_from_settings(settings: Settings) -> InMemoryApiMetrics | RedisApiMetrics:
+    if settings.redis_url is not None:
+        import redis
+
+        return RedisApiMetrics(
+            cast(
+                RedisMetricsStore,
+                redis.Redis.from_url(settings.redis_url, decode_responses=True),
+            ),
+        )
+
+    return InMemoryApiMetrics()
 
 
 def _authenticator_from_settings(

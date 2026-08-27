@@ -1,7 +1,7 @@
 import pytest
 
 from agentic_ops_assistant.auth.models import ApiRole
-from agentic_ops_assistant.rate_limit import FixedWindowRateLimiter
+from agentic_ops_assistant.rate_limit import FixedWindowRateLimiter, RedisFixedWindowRateLimiter
 
 
 class FakeClock:
@@ -52,3 +52,28 @@ def test_rate_limiter_rejects_invalid_configuration(
             max_requests=max_requests,
             window_seconds=window_seconds,
         )
+
+
+class FakeRedis:
+    def __init__(self) -> None:
+        self.values: dict[str, int] = {}
+        self.expirations: dict[str, int] = {}
+
+    def incr(self, key: str) -> int:
+        self.values[key] = self.values.get(key, 0) + 1
+        return self.values[key]
+
+    def expire(self, key: str, seconds: int) -> None:
+        self.expirations[key] = seconds
+
+    def ttl(self, key: str) -> int:
+        return self.expirations[key]
+
+
+def test_redis_rate_limiter_shares_counter_by_role_and_endpoint() -> None:
+    redis_client = FakeRedis()
+    first_limiter = RedisFixedWindowRateLimiter(redis_client, max_requests=1, window_seconds=15)
+    second_limiter = RedisFixedWindowRateLimiter(redis_client, max_requests=1, window_seconds=15)
+
+    assert first_limiter.acquire(role=ApiRole.OPERATOR, endpoint="investigations") is None
+    assert second_limiter.acquire(role=ApiRole.OPERATOR, endpoint="investigations") == 15

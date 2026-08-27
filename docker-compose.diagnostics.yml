@@ -1,0 +1,8 @@
+services:
+  demo-api:
+    image: busybox:1.37
+    container_name: demo-api
+    command:
+      - sh
+      - -c
+      - while true; do echo "demo-api heartbeat"; sleep 2; done

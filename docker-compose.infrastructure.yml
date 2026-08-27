@@ -1,0 +1,13 @@
+services:
+  redis:
+    image: redis:8.2
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  prometheus:
+    image: prom/prometheus:v3.8.1
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./examples/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./var/prometheus-scrape-token:/run/secrets/prometheus-scrape-token:ro

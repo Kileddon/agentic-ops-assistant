@@ -22,5 +22,23 @@
     "title": "Disk pressure",
     "content": "Check filesystem usage, log growth, temporary files, and database volume capacity before removing data.",
     "tags": ["disk", "storage", "filesystem", "capacity"]
+  },
+  {
+    "id": "http-5xx-errors",
+    "title": "HTTP 5xx errors",
+    "content": "Check upstream health, gateway error logs, recent deployments, and dependency response times before changing traffic or retry settings.",
+    "tags": ["http", "api", "gateway", "5xx"]
+  },
+  {
+    "id": "container-out-of-memory",
+    "title": "Container out of memory",
+    "content": "Check container memory usage, configured resource limits, restart count, and workload growth before increasing a memory limit.",
+    "tags": ["kubernetes", "container", "memory", "oom"]
+  },
+  {
+    "id": "ci-pipeline-failure",
+    "title": "CI pipeline failure",
+    "content": "Inspect the failed job logs, the first failing step, recent dependency changes, and the affected build environment before retrying the pipeline.",
+    "tags": ["ci", "pipeline", "build", "deployment"]
   }
 ]

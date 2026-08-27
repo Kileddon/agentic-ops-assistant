@@ -50,8 +50,8 @@ def main(
     parser.add_argument(
         "--minimum-similarity",
         type=float,
-        default=0.6,
-        help="Minimum semantic similarity to include. Default: 0.6.",
+        default=0.58,
+        help="Minimum semantic similarity to include. Default: 0.58.",
     )
     arguments = parser.parse_args(argv)
 
