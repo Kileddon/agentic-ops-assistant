@@ -19,6 +19,7 @@ class Settings:
     status_source: StatusSource
     prometheus_url: str | None
     audit_log_file: Path
+    approval_database_file: Path
     operator_api_key: str | None
     approver_api_key: str | None
     auditor_api_key: str | None
@@ -57,6 +58,11 @@ def load_settings(
             source,
             "OPS_AUDIT_LOG_FILE",
             default=Path("var/audit-events.jsonl"),
+        ),
+        approval_database_file=_optional_path(
+            source,
+            "OPS_APPROVAL_DATABASE_FILE",
+            default=Path("var/approvals.sqlite3"),
         ),
         operator_api_key=_optional_secret(source, "OPS_OPERATOR_API_KEY"),
         approver_api_key=_optional_secret(source, "OPS_APPROVER_API_KEY"),

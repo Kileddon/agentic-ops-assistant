@@ -13,7 +13,11 @@ from agentic_ops_assistant.actions.models import (
     ProposedAction,
 )
 from agentic_ops_assistant.approval.models import ApprovalRequest
-from agentic_ops_assistant.approval.store import ApprovalStore, InMemoryApprovalStore
+from agentic_ops_assistant.approval.store import (
+    ApprovalStore,
+    InMemoryApprovalStore,
+    SqliteApprovalStore,
+)
 from agentic_ops_assistant.approval.workflow import (
     ApprovalNotFoundError,
     ApprovalService,
@@ -470,6 +474,7 @@ def create_app_from_environment(
         ),
         status_provider=status_provider,
         audit_store=JsonlAuditStore(settings.audit_log_file),
+        approval_store=SqliteApprovalStore(str(settings.approval_database_file)),
         authenticator=_authenticator_from_settings(settings),
         rate_limiter=FixedWindowRateLimiter(
             max_requests=settings.rate_limit_requests,
