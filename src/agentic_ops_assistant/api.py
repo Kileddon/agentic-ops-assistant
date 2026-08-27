@@ -39,6 +39,13 @@ from agentic_ops_assistant.audit.store import (
 from agentic_ops_assistant.auth.keycloak import KeycloakJwtAuthenticator
 from agentic_ops_assistant.auth.models import ApiRole, Principal
 from agentic_ops_assistant.auth.service import StaticApiKeyAuthenticator
+from agentic_ops_assistant.diagnostics.docker import (
+    ContainerDiagnostics,
+    DiagnosticsCollector,
+    DiagnosticsError,
+    DockerDiagnosticsCollector,
+)
+from agentic_ops_assistant.diagnostics.logs import search_log_lines
 from agentic_ops_assistant.embeddings.cache import CachingTextEmbedder
 from agentic_ops_assistant.embeddings.client import (
     OllamaEmbeddingClient,
@@ -88,6 +95,7 @@ class InvestigationRequest(BaseModel):
     query: str = Field(min_length=1)
     limit: int = Field(default=5, ge=1, le=10)
     semantic_search: bool = False
+    include_diagnostics: bool = False
 
     @field_validator("service", "query")
     @classmethod
@@ -151,6 +159,14 @@ class InvestigationResponse(BaseModel):
     proposed_action: ProposedActionResponse | None
     policy_decision: PolicyDecisionResponse | None
     approval_request: ApprovalResponse | None
+    diagnostics: "DiagnosticsResponse | None"
+
+
+class DiagnosticsResponse(BaseModel):
+    container: str
+    status: str
+    resource_usage: str
+    log_matches: list[str]
 
 
 class InvestigationSummaryResponse(BaseModel):
@@ -187,6 +203,8 @@ def create_app(
     prometheus_scrape_token: str | None = None,
     alert_webhook_token: str | None = None,
     alert_notifier: NotificationSender | None = None,
+    diagnostics_collector: DiagnosticsCollector | None = None,
+    diagnostic_container: str | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agentic Ops Assistant",
@@ -280,7 +298,7 @@ def create_app(
         principal: Principal,
     ) -> InvestigationReport:
         try:
-            return investigate(
+            report = investigate(
                 query=request.query,
                 service=request.service,
                 articles=articles,
@@ -288,6 +306,37 @@ def create_app(
                 limit=request.limit,
                 semantic_embedder=get_semantic_embedder(request),
                 status_provider=status_provider,
+            )
+            if not request.include_diagnostics:
+                return report
+            if diagnostics_collector is None or diagnostic_container is None:
+                raise HTTPException(
+                    status_code=503, detail="Docker diagnostics are not configured."
+                )
+            try:
+                diagnostics = diagnostics_collector.collect(diagnostic_container)
+            except DiagnosticsError as error:
+                raise HTTPException(status_code=503, detail=str(error)) from error
+            record_event(
+                AuditEventType.DIAGNOSTICS_COLLECTED,
+                request.service,
+                {
+                    "actor_role": principal.role.value,
+                    "container": diagnostics.container,
+                    "log_match_count": str(
+                        len(search_log_lines(diagnostics.recent_logs, request.query))
+                    ),
+                    "status": diagnostics.status,
+                },
+            )
+            return InvestigationReport(
+                service=report.service,
+                service_status=report.service_status,
+                knowledge_matches=report.knowledge_matches,
+                proposed_action=report.proposed_action,
+                policy_decision=report.policy_decision,
+                semantic_matches=report.semantic_matches,
+                diagnostics=diagnostics,
             )
         except PrometheusStatusError as error:
             record_event(
@@ -356,7 +405,7 @@ def create_app(
             },
         )
 
-        return _to_response(report, approval_request)
+        return _to_response(report, approval_request, request.query)
 
     @app.post(
         "/investigation-summaries",
@@ -539,6 +588,8 @@ def create_app_from_environment(
         prometheus_scrape_token=settings.prometheus_scrape_token,
         alert_webhook_token=settings.alert_webhook_token,
         alert_notifier=_alert_notifier_from_settings(settings),
+        diagnostics_collector=_diagnostics_collector_from_settings(settings),
+        diagnostic_container=settings.diagnostic_container,
     )
 
 
@@ -588,6 +639,12 @@ def _alert_notifier_from_settings(settings: Settings) -> TelegramNotifier | None
         bot_token=settings.telegram_bot_token,
         chat_id=settings.telegram_chat_id,
     )
+
+
+def _diagnostics_collector_from_settings(settings: Settings) -> DockerDiagnosticsCollector | None:
+    if settings.diagnostic_container is None:
+        return None
+    return DockerDiagnosticsCollector(allowed_container=settings.diagnostic_container)
 
 
 def _authenticator_from_settings(
@@ -650,6 +707,7 @@ def _authentication_scheme(
 def _to_response(
     report: InvestigationReport,
     approval_request: ApprovalRequest | None,
+    diagnostic_query: str,
 ) -> InvestigationResponse:
     return InvestigationResponse(
         service=report.service,
@@ -661,6 +719,21 @@ def _to_response(
         approval_request=(
             _to_approval_response(approval_request) if approval_request is not None else None
         ),
+        diagnostics=_to_diagnostics_response(report.diagnostics, diagnostic_query),
+    )
+
+
+def _to_diagnostics_response(
+    diagnostics: ContainerDiagnostics | None,
+    query: str,
+) -> DiagnosticsResponse | None:
+    if diagnostics is None:
+        return None
+    return DiagnosticsResponse(
+        container=diagnostics.container,
+        status=diagnostics.status,
+        resource_usage=diagnostics.resource_usage,
+        log_matches=list(search_log_lines(diagnostics.recent_logs, query)),
     )
 
 

@@ -30,6 +30,8 @@ uv run uvicorn "agentic_ops_assistant.alert_relay:create_alert_relay_from_enviro
 
 `TargetDown` alerts when the main API cannot be scraped for 30 seconds, and `ApiServerErrors` alerts after HTTP 5xx responses. Since the relay runs independently on port 8001, it can notify Telegram even when the API on port 8000 is unavailable.
 
+The relay sends the first `firing` and matching `resolved` notification for an alert fingerprint. Repeated `firing` payloads are suppressed while that alert remains active.
+
 Archive a verified audit log locally:
 
 ```powershell
@@ -81,3 +83,23 @@ token, secret, API-key, and bearer-credential formats before printing results:
 ```powershell
 uv run ops-collect-diagnostics demo-api --search "database timeout"
 ```
+
+To include diagnostics in an HTTP investigation, explicitly configure the allowed container on the API process and set `include_diagnostics: true` in the investigation JSON. This records only diagnostic metadata in audit events.
+
+```powershell
+$env:OPS_DIAGNOSTIC_CONTAINER = "demo-api"
+```
+
+Knowledge articles support `source`, `owner`, `last_reviewed`, and `severity` metadata. Check owners and review age with:
+
+```powershell
+uv run ops-check-knowledge-governance --knowledge-file examples/knowledge.json
+```
+
+For a production-like local application topology, create a local `.env.local` containing the required runtime variables and start the API and relay as separate containers:
+
+```powershell
+docker compose -f docker-compose.application.yml up -d --build
+```
+
+`scripts/run-audit-backup.ps1` is the command boundary intended for a Windows Task Scheduler job. It requires `OPS_AUDIT_BACKUP_DIRECTORY` and runs the verified latest-archive backup command.

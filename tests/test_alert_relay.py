@@ -33,6 +33,7 @@ def test_alert_relay_accepts_a_signed_firing_alert() -> None:
     assert response.json() == {"notified": 1}
     assert notifier.messages == [
         "Prometheus alert: ApiDown\n"
+        "Status: firing\n"
         "Service: agentic-ops-assistant\n"
         "Summary: The API is unavailable.",
     ]

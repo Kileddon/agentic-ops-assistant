@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from agentic_ops_assistant.actions.models import PolicyDecision, ProposedAction
 from agentic_ops_assistant.actions.policy import evaluate_action
 from agentic_ops_assistant.actions.proposer import propose_action
+from agentic_ops_assistant.diagnostics.docker import ContainerDiagnostics
 from agentic_ops_assistant.embeddings.client import TextEmbedder
 from agentic_ops_assistant.knowledge.models import (
     KnowledgeArticle,
@@ -24,6 +25,7 @@ class InvestigationReport:
     proposed_action: ProposedAction | None
     policy_decision: PolicyDecision | None
     semantic_matches: tuple[SemanticKnowledgeMatch, ...] = ()
+    diagnostics: ContainerDiagnostics | None = None
 
 
 def investigate(

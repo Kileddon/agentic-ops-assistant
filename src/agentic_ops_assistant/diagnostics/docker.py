@@ -1,6 +1,7 @@
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Protocol
 
 from agentic_ops_assistant.diagnostics.logs import redact_log_line
 
@@ -23,6 +24,10 @@ class ContainerDiagnostics:
             f"Usage: {self.resource_usage}\n"
             f"Log lines collected: {len(self.recent_logs)}"
         )
+
+
+class DiagnosticsCollector(Protocol):
+    def collect(self, container: str) -> ContainerDiagnostics: ...
 
 
 class DockerDiagnosticsCollector:

@@ -97,6 +97,7 @@ def test_prometheus_alert_webhook_notifies_only_firing_alerts() -> None:
     assert accepted_response.json() == {"notified": 1}
     assert notifier.messages == [
         "Prometheus alert: TargetDown\n"
+        "Status: firing\n"
         "Service: demo-unreachable\n"
         "Summary: The demo target cannot be scraped.",
     ]
@@ -153,6 +154,7 @@ def test_create_investigation_returns_structured_report() -> None:
             "reason": "Read-only diagnostic collection is allowed.",
         },
         "approval_request": None,
+        "diagnostics": None,
     }
 
 

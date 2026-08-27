@@ -1,5 +1,7 @@
 import json
+from datetime import date
 from pathlib import Path
+from typing import Literal
 
 from agentic_ops_assistant.knowledge.models import KnowledgeArticle
 
@@ -36,6 +38,10 @@ def _parse_article(raw_article: object) -> KnowledgeArticle:
         title=_required_text(article, "title"),
         content=_required_text(article, "content"),
         tags=_parse_tags(article),
+        source=_optional_text(article, "source", default="local"),
+        owner=_optional_text(article, "owner", default="unassigned"),
+        last_reviewed=_parse_date(article),
+        severity=_parse_severity(article),
     )
 
 
@@ -45,6 +51,34 @@ def _required_text(article: dict[str, object], field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise KnowledgeLoadError(f"Article field '{field_name}' must be non-empty text.")
 
+    return value
+
+
+def _optional_text(article: dict[str, object], field_name: str, *, default: str) -> str:
+    value = article.get(field_name, default)
+    if not isinstance(value, str) or not value.strip():
+        raise KnowledgeLoadError(f"Article field '{field_name}' must be non-empty text.")
+    return value
+
+
+def _parse_date(article: dict[str, object]) -> date | None:
+    value = article.get("last_reviewed")
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise KnowledgeLoadError("Article field 'last_reviewed' must be an ISO date.")
+    try:
+        return date.fromisoformat(value)
+    except ValueError as error:
+        raise KnowledgeLoadError("Article field 'last_reviewed' must be an ISO date.") from error
+
+
+def _parse_severity(
+    article: dict[str, object],
+) -> Literal["low", "medium", "high", "critical"]:
+    value = article.get("severity", "medium")
+    if value not in {"low", "medium", "high", "critical"}:
+        raise KnowledgeLoadError("Article field 'severity' is invalid.")
     return value
 
 

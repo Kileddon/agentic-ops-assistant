@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import FastAPI, Header, HTTPException
 
 from agentic_ops_assistant.alerting import (
+    AlertDeduplicator,
     PrometheusAlertWebhook,
     format_prometheus_alert,
 )
@@ -16,8 +17,14 @@ from agentic_ops_assistant.notifications.telegram import (
 from agentic_ops_assistant.settings import load_alert_relay_settings
 
 
-def create_alert_relay(*, webhook_token: str, notifier: NotificationSender) -> FastAPI:
+def create_alert_relay(
+    *,
+    webhook_token: str,
+    notifier: NotificationSender,
+    deduplicator: AlertDeduplicator | None = None,
+) -> FastAPI:
     app = FastAPI(title="Agentic Ops Alert Relay", version="0.1.0")
+    alert_deduplicator = AlertDeduplicator() if deduplicator is None else deduplicator
 
     @app.get("/health")
     def health_check() -> dict[str, str]:
@@ -32,16 +39,18 @@ def create_alert_relay(*, webhook_token: str, notifier: NotificationSender) -> F
         if authorization is None or not compare_digest(authorization, expected_header):
             raise HTTPException(status_code=401, detail="Invalid Prometheus alert credentials.")
 
-        firing_alerts = tuple(alert for alert in webhook.alerts if alert.status == "firing")
+        notify_alerts = tuple(
+            alert for alert in webhook.alerts if alert_deduplicator.should_notify(alert)
+        )
         try:
-            for alert in firing_alerts:
+            for alert in notify_alerts:
                 notifier.send(format_prometheus_alert(alert))
         except TelegramNotificationError as error:
             raise HTTPException(
                 status_code=502, detail="Telegram alert notification failed."
             ) from error
 
-        return {"notified": len(firing_alerts)}
+        return {"notified": len(notify_alerts)}
 
     return app
 

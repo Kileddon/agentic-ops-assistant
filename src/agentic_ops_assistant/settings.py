@@ -35,6 +35,7 @@ class Settings:
     alert_webhook_token: str | None
     telegram_bot_token: str | None
     telegram_chat_id: str | None
+    diagnostic_container: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +106,7 @@ def load_settings(
         alert_webhook_token=_optional_secret(source, "OPS_ALERT_WEBHOOK_TOKEN"),
         telegram_bot_token=_optional_secret(source, "OPS_TELEGRAM_BOT_TOKEN"),
         telegram_chat_id=_optional_secret(source, "OPS_TELEGRAM_CHAT_ID"),
+        diagnostic_container=_optional_secret(source, "OPS_DIAGNOSTIC_CONTAINER"),
     )
 
 

@@ -3,42 +3,70 @@
     "id": "database-timeout",
     "title": "Database timeout",
     "content": "Check the connection pool and active database connections.",
-    "tags": ["database", "timeout"]
+    "tags": ["database", "timeout"],
+    "source": "operations-runbook",
+    "owner": "platform-team",
+    "last_reviewed": "2026-08-27",
+    "severity": "high"
   },
   {
     "id": "cache-eviction",
     "title": "Cache eviction",
     "content": "Review cache capacity and eviction rate.",
-    "tags": ["cache"]
+    "tags": ["cache"],
+    "source": "operations-runbook",
+    "owner": "platform-team",
+    "last_reviewed": "2026-08-27",
+    "severity": "medium"
   },
   {
     "id": "consumer-lag",
     "title": "Message consumer lag",
     "content": "Check consumer throughput, partition assignment, and failed message processing before increasing consumer capacity.",
-    "tags": ["kafka", "queue", "consumer", "lag"]
+    "tags": ["kafka", "queue", "consumer", "lag"],
+    "source": "operations-runbook",
+    "owner": "platform-team",
+    "last_reviewed": "2026-08-27",
+    "severity": "high"
   },
   {
     "id": "disk-pressure",
     "title": "Disk pressure",
     "content": "Check filesystem usage, log growth, temporary files, and database volume capacity before removing data.",
-    "tags": ["disk", "storage", "filesystem", "capacity"]
+    "tags": ["disk", "storage", "filesystem", "capacity"],
+    "source": "operations-runbook",
+    "owner": "platform-team",
+    "last_reviewed": "2026-08-27",
+    "severity": "high"
   },
   {
     "id": "http-5xx-errors",
     "title": "HTTP 5xx errors",
     "content": "Check upstream health, gateway error logs, recent deployments, and dependency response times before changing traffic or retry settings.",
-    "tags": ["http", "api", "gateway", "5xx"]
+    "tags": ["http", "api", "gateway", "5xx"],
+    "source": "operations-runbook",
+    "owner": "platform-team",
+    "last_reviewed": "2026-08-27",
+    "severity": "high"
   },
   {
     "id": "container-out-of-memory",
     "title": "Container out of memory",
     "content": "Check container memory usage, configured resource limits, restart count, and workload growth before increasing a memory limit.",
-    "tags": ["kubernetes", "container", "memory", "oom"]
+    "tags": ["kubernetes", "container", "memory", "oom"],
+    "source": "operations-runbook",
+    "owner": "platform-team",
+    "last_reviewed": "2026-08-27",
+    "severity": "high"
   },
   {
     "id": "ci-pipeline-failure",
     "title": "CI pipeline failure",
     "content": "Inspect the failed job logs, the first failing step, recent dependency changes, and the affected build environment before retrying the pipeline.",
-    "tags": ["ci", "pipeline", "build", "deployment"]
+    "tags": ["ci", "pipeline", "build", "deployment"],
+    "source": "operations-runbook",
+    "owner": "platform-team",
+    "last_reviewed": "2026-08-27",
+    "severity": "medium"
   }
 ]

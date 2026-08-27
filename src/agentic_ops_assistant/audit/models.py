@@ -11,6 +11,7 @@ class AuditEventType(StrEnum):
     APPROVAL_CREATED = "approval_created"
     APPROVAL_DECIDED = "approval_decided"
     STATUS_PROVIDER_FAILED = "status_provider_failed"
+    DIAGNOSTICS_COLLECTED = "diagnostics_collected"
 
 
 @dataclass(frozen=True, slots=True)
