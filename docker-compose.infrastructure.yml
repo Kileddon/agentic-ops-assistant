@@ -18,5 +18,5 @@ services:
     ports:
       - "127.0.0.1:9093:9093"
     volumes:
-      - ./examples/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ${OPS_ALERTMANAGER_CONFIG:-./examples/alertmanager.local.yml}:/etc/alertmanager/alertmanager.yml:ro
       - ./var/alert-webhook-token:/run/secrets/alert-webhook-token:ro

@@ -1,13 +1,23 @@
 services:
   api:
-    build: .
-    command: uvicorn agentic_ops_assistant.api:create_app_from_environment --factory --host 0.0.0.0 --port 8000
-    env_file: .env.local
+    build:
+      context: .
+    init: true
+    restart: unless-stopped
+    command: >-
+      uvicorn agentic_ops_assistant.api:create_app_from_environment
+      --factory --host 0.0.0.0 --port 8000
+    env_file: ${OPS_APPLICATION_ENV_FILE:-.env.local}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       - ./examples:/app/examples:ro
       - ./var:/app/var
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 30s
@@ -15,11 +25,21 @@ services:
       retries: 3
 
   alert-relay:
-    build: .
-    command: uvicorn agentic_ops_assistant.alert_relay:create_alert_relay_from_environment --factory --host 0.0.0.0 --port 8001
-    env_file: .env.local
+    build:
+      context: .
+    init: true
+    restart: unless-stopped
+    command: >-
+      uvicorn agentic_ops_assistant.alert_relay:create_alert_relay_from_environment
+      --factory --host 0.0.0.0 --port 8001
+    env_file: ${OPS_APPLICATION_ENV_FILE:-.env.local}
     ports:
       - "127.0.0.1:8001:8001"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
       interval: 30s

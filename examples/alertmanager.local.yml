@@ -1,0 +1,16 @@
+route:
+  receiver: telegram-alert-webhook
+  group_by: [alertname, job]
+  group_wait: 5s
+  group_interval: 30s
+  repeat_interval: 15m
+
+receivers:
+  - name: telegram-alert-webhook
+    webhook_configs:
+      - url: http://host.docker.internal:8001/alerts/prometheus
+        send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /run/secrets/alert-webhook-token

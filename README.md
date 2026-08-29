@@ -157,6 +157,10 @@ For local OIDC authentication with Keycloak, see [Local Keycloak](docs/keycloak.
 
 For local Redis, Prometheus, audit archive, and diagnostics setup, see [Local infrastructure](docs/infrastructure.md).
 
+For a production-like local Docker topology with separate API and alert-relay
+containers, copy `.env.local.example` to the ignored `.env.local` file and
+follow [Local infrastructure](docs/infrastructure.md).
+
 ## Development
 
 ```bash

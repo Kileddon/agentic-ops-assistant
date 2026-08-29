@@ -32,6 +32,21 @@ uv run uvicorn "agentic_ops_assistant.alert_relay:create_alert_relay_from_enviro
 
 The relay sends the first `firing` and matching `resolved` notification for an alert fingerprint. Repeated `firing` payloads are suppressed while that alert remains active.
 
+`docker-compose.infrastructure.yml` uses the local Alertmanager profile:
+`group_wait: 5s`, `group_interval: 30s`, and `repeat_interval: 15m`. It makes
+local lifecycle checks fast without disabling deduplication. The checked-in
+`examples/alertmanager.yml` is the production-like profile: a five-minute group
+interval and four-hour repeat interval reduce operational alert noise. Select
+that file explicitly when preparing a non-demo deployment:
+
+```powershell
+$env:OPS_ALERTMANAGER_CONFIG = "./examples/alertmanager.yml"
+docker compose -f docker-compose.infrastructure.yml up -d --force-recreate alertmanager
+```
+
+Remove `OPS_ALERTMANAGER_CONFIG` or set it to
+`./examples/alertmanager.local.yml` to return to the fast local profile.
+
 Archive a verified audit log locally:
 
 ```powershell
@@ -99,7 +114,18 @@ uv run ops-check-knowledge-governance --knowledge-file examples/knowledge.json
 For a production-like local application topology, create a local `.env.local` containing the required runtime variables and start the API and relay as separate containers:
 
 ```powershell
+Copy-Item .env.local.example .env.local
+# Edit .env.local and replace every value marked replace-with-...
 docker compose -f docker-compose.application.yml up -d --build
 ```
+
+The container API connects to local Keycloak and Redis through
+`host.docker.internal`. Start those dependencies first. The application image
+runs as an unprivileged user with a read-only filesystem; only the mounted
+`var/` directory is writable. It does not mount the Docker socket, therefore
+Docker diagnostics are deliberately unavailable in this topology.
+
+By default Compose reads `.env.local`. `OPS_APPLICATION_ENV_FILE` can point to
+another local environment file for a separate machine or non-production check.
 
 `scripts/run-audit-backup.ps1` is the command boundary intended for a Windows Task Scheduler job. It requires `OPS_AUDIT_BACKUP_DIRECTORY` and runs the verified latest-archive backup command.
