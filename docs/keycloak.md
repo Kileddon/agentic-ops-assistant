@@ -48,15 +48,16 @@ When Keycloak settings are present, static API keys are ignored. In a public dep
 
 ## Containerized API
 
-When the API runs through `docker-compose.application.yml`, it reaches Keycloak
-through `host.docker.internal`. Its configured issuer is therefore
-`http://host.docker.internal:8080/realms/ops`. Obtain the local test token from
-the same hostname; JWT issuer validation is exact and a token requested through
-`127.0.0.1` may contain a different issuer.
+When the API runs through `docker-compose.application.yml`, it cannot use the
+host's loopback address to fetch Keycloak signing keys. The example environment
+therefore keeps the public token issuer as `http://127.0.0.1:8080/realms/ops`
+and sets `OPS_KEYCLOAK_JWKS_URL` to the container-reachable
+`host.docker.internal` certificate endpoint. This separates strict JWT issuer
+validation from the internal network route used for JWKS retrieval.
 
 ```powershell
 $token = (Invoke-RestMethod -Method Post `
-  -Uri "http://host.docker.internal:8080/realms/ops/protocol/openid-connect/token" `
+  -Uri "http://127.0.0.1:8080/realms/ops/protocol/openid-connect/token" `
   -ContentType "application/x-www-form-urlencoded" `
   -Body @{ client_id = "ops-api"; grant_type = "password"; username = $env:OPS_KEYCLOAK_TEST_USERNAME; password = $env:OPS_KEYCLOAK_TEST_PASSWORD }).access_token
 ```

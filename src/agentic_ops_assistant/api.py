@@ -660,6 +660,7 @@ def _authenticator_from_settings(
         return KeycloakJwtAuthenticator(
             issuer=settings.keycloak_issuer,
             audience=settings.keycloak_audience,
+            jwks_url=settings.keycloak_jwks_url,
         )
 
     if settings.operator_api_key is None:

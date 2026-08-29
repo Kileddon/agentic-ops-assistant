@@ -85,6 +85,23 @@ def test_load_settings_reads_optional_next_api_keys(tmp_path: Path) -> None:
     assert settings.auditor_next_api_key is None
 
 
+def test_load_settings_reads_optional_keycloak_jwks_url(tmp_path: Path) -> None:
+    knowledge_file = tmp_path / "knowledge.json"
+    knowledge_file.touch()
+    status_file = tmp_path / "service_statuses.json"
+    status_file.touch()
+
+    settings = load_settings(
+        {
+            "OPS_KNOWLEDGE_FILE": str(knowledge_file),
+            "OPS_SERVICE_STATUS_FILE": str(status_file),
+            "OPS_KEYCLOAK_JWKS_URL": "http://keycloak.internal/certs",
+        },
+    )
+
+    assert settings.keycloak_jwks_url == "http://keycloak.internal/certs"
+
+
 def test_load_settings_reads_rate_limit_configuration(tmp_path: Path) -> None:
     knowledge_file = tmp_path / "knowledge.json"
     knowledge_file.touch()

@@ -30,6 +30,7 @@ class Settings:
     rate_limit_window_seconds: float
     keycloak_issuer: str | None
     keycloak_audience: str | None
+    keycloak_jwks_url: str | None
     redis_url: str | None
     prometheus_scrape_token: str | None
     alert_webhook_token: str | None
@@ -101,6 +102,7 @@ def load_settings(
         ),
         keycloak_issuer=_optional_secret(source, "OPS_KEYCLOAK_ISSUER"),
         keycloak_audience=_optional_secret(source, "OPS_KEYCLOAK_AUDIENCE"),
+        keycloak_jwks_url=_optional_secret(source, "OPS_KEYCLOAK_JWKS_URL"),
         redis_url=_optional_secret(source, "OPS_REDIS_URL"),
         prometheus_scrape_token=_optional_secret(source, "OPS_PROMETHEUS_SCRAPE_TOKEN"),
         alert_webhook_token=_optional_secret(source, "OPS_ALERT_WEBHOOK_TOKEN"),

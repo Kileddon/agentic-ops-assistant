@@ -31,3 +31,17 @@ def test_keycloak_authenticator_rejects_invalid_or_ambiguous_roles() -> None:
 
     assert invalid_token_authenticator.authenticate("invalid") is None
     assert ambiguous_roles_authenticator.authenticate("access-token") is None
+
+
+def test_keycloak_authenticator_accepts_a_separate_jwks_url() -> None:
+    authenticator = KeycloakJwtAuthenticator(
+        issuer="http://127.0.0.1:8080/realms/ops",
+        audience="ops-api",
+        jwks_url="http://host.docker.internal:8080/realms/ops/protocol/openid-connect/certs",
+        decoder=lambda token: {"realm_access": {"roles": ["operator"]}},
+    )
+
+    principal = authenticator.authenticate("access-token")
+
+    assert principal is not None
+    assert principal.role == ApiRole.OPERATOR

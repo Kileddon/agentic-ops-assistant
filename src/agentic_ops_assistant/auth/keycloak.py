@@ -14,11 +14,15 @@ class KeycloakJwtAuthenticator:
         *,
         issuer: str,
         audience: str,
+        jwks_url: str | None = None,
         decoder: Callable[[str], Mapping[str, object]] | None = None,
         http_client: httpx2.Client | None = None,
     ) -> None:
         self._issuer = issuer.rstrip("/")
         self._audience = audience
+        self._jwks_url = (
+            f"{self._issuer}/protocol/openid-connect/certs" if jwks_url is None else jwks_url
+        )
         self._decoder = decoder or self._decode
         self._http_client = httpx2.Client(trust_env=False) if http_client is None else http_client
 
@@ -37,7 +41,7 @@ class KeycloakJwtAuthenticator:
         return Principal(api_roles.pop())
 
     def _decode(self, token: str) -> Mapping[str, object]:
-        response = self._http_client.get(f"{self._issuer}/protocol/openid-connect/certs")
+        response = self._http_client.get(self._jwks_url)
         response.raise_for_status()
         jwks_payload: object = response.json()
 
