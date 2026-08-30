@@ -57,6 +57,10 @@ def load_settings(
 ) -> Settings:
     source = os.environ if environment is None else environment
     status_source = _status_source(source)
+    prometheus_url = _optional_secret(source, "OPS_PROMETHEUS_URL")
+
+    if status_source == "prometheus" and prometheus_url is None:
+        raise SettingsError("Missing required environment variable: OPS_PROMETHEUS_URL")
 
     return Settings(
         knowledge_file=_required_file_path(source, "OPS_KNOWLEDGE_FILE"),
@@ -71,9 +75,7 @@ def load_settings(
             if status_source == "json"
             else None
         ),
-        prometheus_url=(
-            _required_text(source, "OPS_PROMETHEUS_URL") if status_source == "prometheus" else None
-        ),
+        prometheus_url=prometheus_url,
         audit_log_file=_optional_path(
             source,
             "OPS_AUDIT_LOG_FILE",

@@ -5,6 +5,12 @@ from fastapi.testclient import TestClient
 from agentic_ops_assistant.api import create_app, create_app_from_environment
 from agentic_ops_assistant.audit.store import InMemoryAuditStore
 from agentic_ops_assistant.auth.service import StaticApiKeyAuthenticator
+from agentic_ops_assistant.incidents.models import (
+    IncidentKind,
+    IncidentSeverity,
+    IncidentSignal,
+)
+from agentic_ops_assistant.incidents.service import IncidentInvestigationService
 from agentic_ops_assistant.knowledge.models import KnowledgeArticle
 from agentic_ops_assistant.operations.prometheus import PrometheusStatusError
 from agentic_ops_assistant.operations.status import ServiceHealth, ServiceStatus
@@ -52,6 +58,21 @@ class FakeNotifier:
 
     def send(self, text: str) -> None:
         self.messages.append(text)
+
+
+class FakeIncidentDetector:
+    def detect(self, service: str) -> tuple[IncidentSignal, ...]:
+        return (
+            IncidentSignal(
+                service=service,
+                kind=IncidentKind.HTTP_5XX,
+                severity=IncidentSeverity.WARNING,
+                summary="Prometheus reports 1 HTTP 5xx response in five minutes.",
+                investigation_query="HTTP 5xx errors gateway upstream",
+                evidence_query="example-promql",
+                observed_value=1.0,
+            ),
+        )
 
 
 def test_health_check_returns_ok() -> None:
@@ -530,6 +551,49 @@ def test_create_app_from_environment_loads_application_data(
     assert limited_response.status_code == 429
     assert response.json()["service_status"]["health"] == "degraded"
     assert response.json()["knowledge_matches"][0]["id"] == "database-timeout"
+
+
+def test_incident_detection_investigates_signal_and_can_notify_operator() -> None:
+    article = KnowledgeArticle(
+        id="http-5xx",
+        title="HTTP 5xx errors",
+        content="Check upstream health.",
+        tags=("http", "5xx"),
+    )
+    notifier = FakeNotifier()
+    incident_service = IncidentInvestigationService(
+        detector=FakeIncidentDetector(),
+        articles=(article,),
+        status_provider=FakeStatusProvider(
+            ServiceStatus(
+                service="gateway-api",
+                health=ServiceHealth.DEGRADED,
+                summary="Prometheus reports 1 of 2 targets up.",
+            ),
+        ),
+    )
+    client = TestClient(
+        create_app(
+            incident_service=incident_service,
+            incident_notifier=notifier,
+        ),
+    )
+
+    response = client.post(
+        "/incident-detections",
+        json={"service": "gateway-api", "notify": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0]["signal"] == {
+        "kind": "http_5xx",
+        "severity": "warning",
+        "summary": "Prometheus reports 1 HTTP 5xx response in five minutes.",
+        "evidence_query": "example-promql",
+        "observed_value": 1.0,
+    }
+    assert response.json()[0]["investigation"]["knowledge_matches"][0]["id"] == "http-5xx"
+    assert notifier.messages[0].startswith("Incident detected: http_5xx (warning)")
 
 
 def test_outage_creates_pending_approval_and_accepts_decision() -> None:

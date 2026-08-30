@@ -13,6 +13,7 @@ Agentic Ops Assistant is a local-first operations triage service. It combines se
 - Generate validated, structured local-model summaries of investigations.
 - Authenticate API callers with local Keycloak OIDC access tokens.
 - Record correlation IDs, with optional Redis-backed shared limits and API metrics.
+- Detect availability, HTTP 5xx, and latency incidents from Prometheus evidence.
 - Expose the workflow through CLI commands and a FastAPI application.
 
 ## Safety model
@@ -133,6 +134,7 @@ Protected endpoints use a fixed-window limit of 60 requests per 60 seconds for e
 - `GET /health`
 - `POST /investigations`
 - `POST /investigation-summaries`
+- `POST /incident-detections`
 - `POST /approvals/{approval_id}/decisions`
 - `GET /audit-events`
 - `GET /metrics`
@@ -149,6 +151,19 @@ Invoke-RestMethod `
   -Headers @{ "X-API-Key" = $env:OPS_OPERATOR_API_KEY } `
   -ContentType "application/json" `
   -Body '{"service":"payments-api","query":"database timeout","limit":3}'
+```
+
+Detect Prometheus incidents for a monitored service. `notify` sends a concise
+evidence-based Telegram report; retrieved knowledge articles remain possible
+causes to investigate rather than confirmed root causes.
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/incident-detections" `
+  -Headers @{ Authorization = "Bearer $token" } `
+  -ContentType "application/json" `
+  -Body '{"service":"agentic-ops-assistant","notify":true}'
 ```
 
 For a public HTTPS deployment with Caddy while keeping Uvicorn on loopback, see [HTTPS deployment](docs/deployment.md).

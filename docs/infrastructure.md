@@ -47,6 +47,32 @@ docker compose -f docker-compose.infrastructure.yml up -d --force-recreate alert
 Remove `OPS_ALERTMANAGER_CONFIG` or set it to
 `./examples/alertmanager.local.yml` to return to the fast local profile.
 
+## Incident detection
+
+Set `OPS_PROMETHEUS_URL` to make the API and CLI inspect Prometheus without
+changing its data. The first detector set evaluates availability, HTTP 5xx
+responses in the last five minutes, and average API latency in the last five
+minutes. Each signal is turned into the normal knowledge-retrieval and policy
+workflow.
+
+```powershell
+uv run ops-detect-incidents `
+  --knowledge-file examples/knowledge.json `
+  --prometheus-url http://127.0.0.1:9090 `
+  agentic-ops-assistant
+```
+
+Add `--notify` to send the same report to Telegram. It reads
+`OPS_TELEGRAM_BOT_TOKEN` and `OPS_TELEGRAM_CHAT_ID` from the local environment,
+not from command-line arguments or Git-tracked files.
+
+`POST /incident-detections` exposes the same workflow to an authenticated
+operator and sends a concise Telegram report only when `notify` is `true`.
+Retrieved articles are possible causes to investigate, not confirmation of a
+root cause. A later local LLM layer can improve wording, but it will receive
+only detector evidence and the completed investigation; it will not choose
+policy or execute an action.
+
 Archive a verified audit log locally:
 
 ```powershell

@@ -51,6 +51,11 @@ from agentic_ops_assistant.embeddings.client import (
     OllamaEmbeddingClient,
     TextEmbedder,
 )
+from agentic_ops_assistant.incidents.notifications import format_incident_notification
+from agentic_ops_assistant.incidents.service import (
+    DetectedIncident,
+    IncidentInvestigationService,
+)
 from agentic_ops_assistant.investigation import InvestigationReport, investigate
 from agentic_ops_assistant.knowledge.loader import load_articles
 from agentic_ops_assistant.knowledge.models import (
@@ -110,6 +115,20 @@ class InvestigationRequest(BaseModel):
 
 class ApprovalDecisionRequest(BaseModel):
     approved: bool
+
+
+class IncidentDetectionRequest(BaseModel):
+    service: str = Field(min_length=1)
+    semantic_search: bool = False
+    notify: bool = False
+
+    @field_validator("service")
+    @classmethod
+    def normalize_service(cls, value: str) -> str:
+        normalized_value = value.strip()
+        if not normalized_value:
+            raise ValueError("Service must not be blank.")
+        return normalized_value
 
 
 class ServiceStatusResponse(BaseModel):
@@ -174,6 +193,19 @@ class InvestigationSummaryResponse(BaseModel):
     summary: str
 
 
+class IncidentSignalResponse(BaseModel):
+    kind: str
+    severity: str
+    summary: str
+    evidence_query: str
+    observed_value: float | None
+
+
+class DetectedIncidentResponse(BaseModel):
+    signal: IncidentSignalResponse
+    investigation: InvestigationResponse
+
+
 class AuditEventResponse(BaseModel):
     id: UUID
     occurred_at: str
@@ -203,6 +235,8 @@ def create_app(
     prometheus_scrape_token: str | None = None,
     alert_webhook_token: str | None = None,
     alert_notifier: NotificationSender | None = None,
+    incident_service: IncidentInvestigationService | None = None,
+    incident_notifier: NotificationSender | None = None,
     diagnostics_collector: DiagnosticsCollector | None = None,
     diagnostic_container: str | None = None,
 ) -> FastAPI:
@@ -451,6 +485,58 @@ def create_app(
             summary=summary,
         )
 
+    @app.post("/incident-detections", response_model=list[DetectedIncidentResponse])
+    def detect_incidents(
+        request: IncidentDetectionRequest,
+        principal: Annotated[
+            Principal,
+            Depends(require_role("incident-detections", ApiRole.OPERATOR)),
+        ],
+    ) -> list[DetectedIncidentResponse]:
+        if incident_service is None:
+            raise HTTPException(
+                status_code=503, detail="Prometheus incident detection is not configured."
+            )
+
+        try:
+            incidents = incident_service.investigate(
+                request.service,
+                semantic_search=request.semantic_search,
+            )
+        except PrometheusStatusError as error:
+            record_event(
+                AuditEventType.STATUS_PROVIDER_FAILED,
+                request.service,
+                {"actor_role": principal.role.value, "provider": "prometheus"},
+            )
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+        if request.notify and incident_notifier is None:
+            raise HTTPException(
+                status_code=503, detail="Incident notifications are not configured."
+            )
+
+        for incident in incidents:
+            _record_detected_incident(record_event, incident, principal)
+            if request.notify and incident_notifier is not None:
+                try:
+                    incident_notifier.send(format_incident_notification(incident))
+                except TelegramNotificationError as error:
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Incident notification could not be sent.",
+                    ) from error
+                record_event(
+                    AuditEventType.INCIDENT_NOTIFICATION_SENT,
+                    incident.signal.service,
+                    {
+                        "actor_role": principal.role.value,
+                        "incident_kind": incident.signal.kind.value,
+                    },
+                )
+
+        return [_to_detected_incident_response(incident) for incident in incidents]
+
     @app.post(
         "/approvals/{approval_id}/decisions",
         response_model=ApprovalResponse,
@@ -560,6 +646,7 @@ def create_app_from_environment(
 
     statuses: tuple[ServiceStatus, ...] = ()
     status_provider: ServiceStatusProvider | None = None
+    incident_service: IncidentInvestigationService | None = None
 
     if settings.status_source == "json":
         if settings.service_status_file is None:
@@ -571,6 +658,25 @@ def create_app_from_environment(
             raise RuntimeError("Prometheus status source requires a URL.")
 
         status_provider = PrometheusStatusProvider(settings.prometheus_url)
+
+    if settings.prometheus_url is not None:
+        from agentic_ops_assistant.incidents.prometheus import (
+            PrometheusIncidentDetector,
+            PrometheusInstantQueryClient,
+        )
+
+        incident_status_provider = PrometheusStatusProvider(settings.prometheus_url)
+        incident_service = IncidentInvestigationService(
+            detector=PrometheusIncidentDetector(
+                status_provider=incident_status_provider,
+                query_client=PrometheusInstantQueryClient(settings.prometheus_url),
+            ),
+            articles=articles,
+            status_provider=incident_status_provider,
+            semantic_embedder=CachingTextEmbedder(
+                OllamaEmbeddingClient(model="nomic-embed-text"),
+            ),
+        )
 
     return create_app(
         articles=articles,
@@ -588,6 +694,8 @@ def create_app_from_environment(
         prometheus_scrape_token=settings.prometheus_scrape_token,
         alert_webhook_token=settings.alert_webhook_token,
         alert_notifier=_alert_notifier_from_settings(settings),
+        incident_service=incident_service,
+        incident_notifier=_incident_notifier_from_settings(settings),
         diagnostics_collector=_diagnostics_collector_from_settings(settings),
         diagnostic_container=settings.diagnostic_container,
     )
@@ -632,6 +740,20 @@ def _alert_notifier_from_settings(settings: Settings) -> TelegramNotifier | None
     if settings.telegram_bot_token is None:
         raise SettingsError("Missing required environment variable: OPS_TELEGRAM_BOT_TOKEN")
 
+    if settings.telegram_chat_id is None:
+        raise SettingsError("Missing required environment variable: OPS_TELEGRAM_CHAT_ID")
+
+    return TelegramNotifier(
+        bot_token=settings.telegram_bot_token,
+        chat_id=settings.telegram_chat_id,
+    )
+
+
+def _incident_notifier_from_settings(settings: Settings) -> TelegramNotifier | None:
+    if settings.telegram_bot_token is None and settings.telegram_chat_id is None:
+        return None
+    if settings.telegram_bot_token is None:
+        raise SettingsError("Missing required environment variable: OPS_TELEGRAM_BOT_TOKEN")
     if settings.telegram_chat_id is None:
         raise SettingsError("Missing required environment variable: OPS_TELEGRAM_CHAT_ID")
 
@@ -703,6 +825,40 @@ def _authentication_scheme(
         return "ApiKey"
 
     return "Bearer"
+
+
+def _record_detected_incident(
+    record_event: Callable[[AuditEventType, str, Mapping[str, str]], AuditEvent],
+    incident: DetectedIncident,
+    principal: Principal,
+) -> None:
+    record_event(
+        AuditEventType.INCIDENT_DETECTED,
+        incident.signal.service,
+        {
+            "actor_role": principal.role.value,
+            "evidence_query": incident.signal.evidence_query,
+            "incident_kind": incident.signal.kind.value,
+            "severity": incident.signal.severity.value,
+        },
+    )
+
+
+def _to_detected_incident_response(incident: DetectedIncident) -> DetectedIncidentResponse:
+    return DetectedIncidentResponse(
+        signal=IncidentSignalResponse(
+            kind=incident.signal.kind.value,
+            severity=incident.signal.severity.value,
+            summary=incident.signal.summary,
+            evidence_query=incident.signal.evidence_query,
+            observed_value=incident.signal.observed_value,
+        ),
+        investigation=_to_response(
+            incident.investigation,
+            approval_request=None,
+            diagnostic_query=incident.signal.investigation_query,
+        ),
+    )
 
 
 def _to_response(
